@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Usar um enum em cover e state ao inves de um uint8_t?
 typedef enum {
@@ -41,7 +42,7 @@ typedef struct {
 cell_t *current_state = NULL;
 cell_t *next_state = NULL;
 
-uint32_t *activation = NULL;
+int32_t *activation = NULL;
 
 pos_t *fire_centers = NULL;
 zone_t *zones = NULL;
@@ -54,6 +55,12 @@ float fire_threshold;
 
 int8_t wind_l, wind_c;
 float wind_str;
+
+// Fatores de combustível
+const int32_t fator_comb[4] = {0, 0, 8, 12};
+// vizinhos de Moore (8 vizinhos)
+const int dr[8] = {-1, -1, -1,  0, 0,  1, 1, 1};
+const int dc[8] = {-1,  0,  1, -1, 1, -1, 0, 1};
 
 // NOTE: Talvez seja válido simplificar a lógica...
 int32_t parse_input(const char *filename) {
@@ -294,12 +301,145 @@ int32_t generate_matrix() {
         }
     }
 
+    printf("Matriz gerada com sucesso!\n");
     return 0;
 }
 
-// TODO: Implementar a construção do mapa de contenção
-int32_t mapa_de_contencao() {}
+int32_t mapa_de_contencao() {
+    size_t total_cells = (size_t)lines * (size_t)columns;
 
+    activation = (int32_t *)malloc(total_cells * sizeof(int32_t));
+    if (activation == NULL) {
+        fprintf(stderr, "Erro ao alocar memória para o mapa de ativação!\n");
+        return 1;
+    }
+
+    for (size_t i = 0; i < total_cells; i++) {
+        activation[i] = -1;
+    }
+
+    for (int32_t z = 0; z < n_zones; z++) {
+        int32_t step = zones[z].step;
+        int32_t r_min = zones[z].bottom.x;
+        int32_t r_max = zones[z].top.x;
+        int32_t c_min = zones[z].bottom.y;
+        int32_t c_max = zones[z].top.y;
+
+        for (int32_t r = r_min; r <= r_max; r++) {
+            for (int32_t c = c_min; c <= c_max; c++) {
+                size_t idx = (size_t)r * (size_t)columns + (size_t)c;
+
+                if (activation[idx] == -1 || step < activation[idx]) {
+                    activation[idx] = step;
+                }
+            }
+        }
+    }
+    printf("Mapa de contenção gerado com sucesso!\n");
+    return 0;
+}
+
+void simulation() {
+    size_t total_cells = (size_t)lines * (size_t)columns;
+     
+    for (int32_t p = 0; p < max_steps; p++) {
+        // Passo 1: ativar as zonas programadas para p
+        for (size_t i = 0; i < total_cells; i++) {
+            if (activation[i] == p) {
+                if (current_state[i].state == STATE_INTACTA) {
+                    current_state[i].state = STATE_CONTENCAO;
+                }
+            }
+        }
+        // Passo 2: atualizar o estado das células
+        for (int32_t r = 0; r < lines; r++) {
+            for (int32_t c = 0; c < columns; c++) {
+                size_t idx = (size_t)r * (size_t)columns + (size_t)c;
+                cell_t curr = current_state[idx];
+                cell_t next = curr; // Copia propriedades base (cobertura, umidade)
+
+                switch (curr.state) {
+                    case STATE_NAO_COMBUSTIVEL:
+                    case STATE_QUEIMADA:
+                    case STATE_CONTENCAO:
+                        break;
+
+                    case STATE_EM_CHAMAS: {
+                        uint8_t novo_tempo = curr.burn_time - 1;
+                        if (novo_tempo == 0) {
+                            next.state = STATE_QUEIMADA;
+                            next.burn_time = 0;
+                        } else {
+                            next.state = STATE_EM_CHAMAS;
+                            next.burn_time = novo_tempo;
+                        }
+                        break;
+                    }
+
+                    case STATE_INTACTA: {
+                        // Cálculo do potencial de ignição
+                        int32_t S = 0; // Suma
+
+                        // Por cada vizinho...
+                        for (int k = 0; k < 8; k++) {
+                            int32_t nr = r + dr[k];
+                            int32_t nc = c + dc[k];
+
+                            // Ignora vizinhos fora da matriz
+                            if (nr < 0 || nr >= lines || nc < 0 || nc >= columns) {
+                                continue;
+                            }
+
+                            size_t n_idx = (size_t)nr * (size_t)columns + (size_t)nc;
+                            if (current_state[n_idx].state == STATE_EM_CHAMAS) {
+                                int32_t prop_linha = r - nr;
+                                int32_t prop_coluna = c - nc;
+                                
+                                // Vizinhos ortogonais contribuem com 10, diagonais com 7
+                                int32_t abs_l = prop_linha < 0 ? -prop_linha : prop_linha;
+                                int32_t abs_c = prop_coluna < 0 ? -prop_coluna : prop_coluna;
+                                int32_t p_basico = (abs_l + abs_c == 1) ? 10 : 7;
+
+                                // Alinhamento com o vento
+                                int32_t A = prop_linha * wind_l + prop_coluna * wind_c;
+
+                                // Peso do vizinho
+                                int32_t p_v = p_basico + (int32_t)(wind_str * (float)A);
+                                if (p_v < 1) p_v = 1;
+
+                                S += p_v;
+                            }
+                        }
+
+                        // Potencial de ignição em aritmética inteira truncada[cite: 1]
+                        int32_t I = (S * fator_comb[curr.cover] * (100 - (int32_t)curr.humidity)) / 100;
+
+                        if (I >= (int32_t)fire_threshold) {
+                            next.state = STATE_EM_CHAMAS;
+                            next.burn_time = (curr.cover == COVER_VEGETACAO_RASTEIRA) ? 2 : 4;
+                        } else {
+                            next.state = STATE_INTACTA;
+                            next.burn_time = 0;
+                        }
+                        break;
+                    }
+                }
+                next_state[idx] = next;
+            }
+        }
+
+        // Passo 3: calcular as estatísticas do próximo estado
+
+        // Passo 4: Trocar as matrizes
+        cell_t *temp = current_state;
+        current_state = next_state;
+        next_state = temp;
+
+        // Passo 5: verificar a condição de parada
+
+        printf("Passo %d concluído.\n", p);
+    }
+}
 
 
 int main(int argc, char *argv[]) {
@@ -309,47 +449,70 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    int32_t parse_res = parse_input(argv[1]);
-    if (parse_res != 0) {
-        if (fire_centers != NULL)
-            free(fire_centers);
-        if (zones != NULL)
-            free(zones);
+    if (parse_input(argv[1]) != 0) {
+        free(fire_centers);
+        free(zones);
         exit(1);
     }
 
     uint32_t rnd_seed_original = rnd_seed;
 
-    int32_t gen_res = generate_matrix();
-    if (gen_res != 0) {
-        if (fire_centers != NULL)
-            free(fire_centers);
-        if (zones != NULL)
-            free(zones);
+    if (generate_matrix() != 0) {
+        free(fire_centers);
+        free(zones);
+        free(current_state);
+        free(next_state);
         exit(1);
     }
 
-    printf("Linhas: %d, Colunas: %d, Passos: %d, Threads: %d, Seed: %d, "
-           "Threshold: %.2f\n",
-           lines, columns, max_steps, nthreads, rnd_seed_original, fire_threshold);
-    printf("Vento: (%d, %d), Intensidade: %.2f\n", wind_l, wind_c, wind_str);
-    printf("Focos: %d, Zonas: %d\n", n_fires, n_zones);
-    for (int32_t i = 0; i < n_fires; i++) {
-        printf("Foco %d: (%d, %d)\n", i, fire_centers[i].x, fire_centers[i].y);
-    }
-    for (int32_t i = 0; i < n_zones; i++) {
-        printf("Zona %d: Passo %d, Limites: (%d, %d) a (%d, %d)\n", i,
-               zones[i].step, zones[i].bottom.x, zones[i].bottom.y,
-               zones[i].top.x, zones[i].top.y);
-    }
-
-    if (fire_centers != NULL)
+    if (mapa_de_contencao() != 0) {
         free(fire_centers);
-    if (zones != NULL)
         free(zones);
-
-
+        free(current_state);
+        free(next_state);
+        free(activation);
+        exit(1);
+    }
 
     
+    // si el nombre del archivo empieza con "tests/"
+    if (strncmp(argv[1], "tests/", 6) == 0) {
+        printf("Linhas: %d, Colunas: %d, Passos: %d, Threads: %d, Seed: %d, "
+            "Threshold: %.2f\n",
+            lines, columns, max_steps, nthreads, rnd_seed_original, fire_threshold);
+        printf("Vento: (%d, %d), Intensidade: %.2f\n", wind_l, wind_c, wind_str);
+        printf("Focos: %d, Zonas: %d\n", n_fires, n_zones);
+        for (int32_t i = 0; i < n_fires; i++) {
+            printf("Foco %d: (%d, %d)\n", i, fire_centers[i].x, fire_centers[i].y);
+        }
+        for (int32_t i = 0; i < n_zones; i++) {
+            printf("Zona %d: Passo %d, Limites: (%d, %d) a (%d, %d)\n", i,
+                zones[i].step, zones[i].bottom.x, zones[i].bottom.y,
+                zones[i].top.x, zones[i].top.y);
+        }
+
+        for (int32_t i = 0; i < lines; i++) {
+            for (int32_t j = 0; j < columns; j++) {
+                size_t idx = (size_t)i * (size_t)columns + (size_t)j;
+                // imprimir tiempo de contencao
+                if (activation[idx] == -1) {
+                    printf("   ");
+                } else {
+                    printf("%d ", activation[idx]);
+                }
+        
+            }
+            printf("\n");
+        }
+    }
+
+
+    simulation();
+    free(fire_centers);
+    free(zones);
+    free(current_state);
+    free(next_state);
+    free(activation);
+
     return 0;
 }
