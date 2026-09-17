@@ -1,2 +1,4 @@
 fire_omp
 fire_seq
+
+*.exe

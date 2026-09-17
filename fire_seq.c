@@ -5,6 +5,20 @@
 #include <stdlib.h>
 
 // Usar um enum em cover e state ao inves de um uint8_t?
+typedef enum {
+    COVER_AGUA = 0,
+    COVER_SOLO_EXPOSTO = 1,
+    COVER_VEGETACAO_RASTEIRA = 2,
+    COVER_FLORESTA = 3
+} cover_t;
+
+typedef enum {
+    STATE_NAO_COMBUSTIVEL = 0,
+    STATE_INTACTA = 1,
+    STATE_EM_CHAMAS = 2,
+    STATE_QUEIMADA = 3,
+    STATE_CONTENCAO = 4
+} state_t;
 
 typedef struct {
     uint8_t cover;
@@ -31,8 +45,11 @@ uint32_t *activation = NULL;
 
 pos_t *fire_centers = NULL;
 zone_t *zones = NULL;
+int32_t n_fires = 0;
+int32_t n_zones = 0;
 
-int32_t lines, columns, max_steps, nthreads, rnd_seed;
+int32_t lines, columns, max_steps, nthreads;
+uint32_t rnd_seed;
 float fire_threshold;
 
 int8_t wind_l, wind_c;
@@ -59,9 +76,9 @@ int32_t parse_input(const char *filename) {
     // OBS: O parsing das entradas não detecta under/over flow das entradas
     scn_res = sscanf(
         line_buff,
-        "%" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNd32 " %f",
+        "%" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNu32 " %f",
         &lines, &columns, &max_steps, &nthreads, &rnd_seed, &fire_threshold);
-
+    
     // Se o número de entradas lidas for diferente de 6, então retornar erro.
     if (scn_res != 6) {
         fprintf(stderr, "[Linha 1] Entrada mal formada!\n");
@@ -92,13 +109,20 @@ int32_t parse_input(const char *filename) {
         return 1;
     }
 
+    if (wind_l < -1 || wind_l > 1 || wind_c < -1 || wind_c > 1 || 
+        (wind_l == 0 && wind_c == 0) || wind_str < 0 || wind_str > 5) {
+        fprintf(stderr, "Entradas de vento inválidas (fora do domínio da "
+                        "aplicação)!\n");
+        fclose(input_ptr);
+        return 1;
+    }
+
+    // Leitura da terceira linha
     if (fgets(line_buff, 100, input_ptr) == NULL) {
         perror("Erro ao ler a linha 3");
         fclose(input_ptr);
         return 1;
     }
-
-    int32_t n_fires, n_zones;
 
     scn_res = sscanf(line_buff, "%" SCNd32 " %" SCNd32, &n_fires, &n_zones);
 
@@ -123,7 +147,6 @@ int32_t parse_input(const char *filename) {
         if (fgets(line_buff, 100, input_ptr) == NULL) {
             perror("Erro ao ler entrada de foco de fogo");
             fclose(input_ptr);
-
             return 1;
         }
 
@@ -135,6 +158,27 @@ int32_t parse_input(const char *filename) {
             fclose(input_ptr);
 
             return 1;
+        }
+
+        if (fire_centers[i].x < 0 || fire_centers[i].x >= lines ||
+            fire_centers[i].y < 0 || fire_centers[i].y >= columns) {
+            fprintf(stderr, "Foco %d fora da matriz!\n", i);
+            fclose(input_ptr);
+
+            return 1;
+        }
+    }
+
+    // TODO: Melhorar eficiencia da verificação de focos repetidos (usar hash table ou algo do tipo)
+    for (int32_t i = 0; i < n_fires; i++) {
+        for (int32_t j = i + 1; j < n_fires; j++) {
+            if (fire_centers[i].x == fire_centers[j].x &&
+                fire_centers[i].y == fire_centers[j].y) {
+                fprintf(stderr, "Foco repetido encontrado en (%d, %d)!\n",
+                        fire_centers[i].x, fire_centers[i].y);
+                fclose(input_ptr);
+                return 1;
+            }
         }
     }
 
@@ -158,6 +202,28 @@ int32_t parse_input(const char *filename) {
 
             return 1;
         }
+
+        if (zones[i].step < 0 || zones[i].step >= max_steps) {
+            fprintf(stderr, "Zona %d com passo inválido!\n", i);
+            fclose(input_ptr);
+            return 1;
+        }
+
+        if (zones[i].bottom.x < 0 || zones[i].bottom.x >= lines ||
+            zones[i].bottom.y < 0 || zones[i].bottom.y >= columns ||
+            zones[i].top.x < 0 || zones[i].top.x >= lines ||
+            zones[i].top.y < 0 || zones[i].top.y >= columns) {
+            fprintf(stderr, "Zona %d fora da matriz!\n", i);
+            fclose(input_ptr);
+            return 1;
+        }
+
+        if (zones[i].bottom.x > zones[i].top.x ||
+            zones[i].bottom.y > zones[i].top.y) {
+            fprintf(stderr, "Zona %d com limites iniciais superiores aos finais!\n", i);
+            fclose(input_ptr);
+            return 1;
+        }
     }
 
     if (fgetc(input_ptr) != EOF) {
@@ -173,6 +239,69 @@ int32_t parse_input(const char *filename) {
     return 0;
 }
 
+int32_t generate_matrix() {
+    // Alocação de memória para as matrizes de células
+    size_t total_cells = (size_t)lines * (size_t)columns;
+
+    current_state = (cell_t *)malloc(total_cells * sizeof(cell_t));
+    next_state = (cell_t *)malloc(total_cells * sizeof(cell_t));
+
+    if (current_state == NULL || next_state == NULL) {
+        fprintf(stderr, "Erro ao alocar memória para a matriz de células!\n");
+        return 1;
+    }
+
+    // Geração sequencial da cobertura e umidade
+    for (int32_t i = 0; i < lines; i++) {
+        for (int32_t j = 0; j < columns; j++) {
+            size_t idx = (size_t)i * (size_t)columns + (size_t)j;
+
+            // Geração da cobertura
+            int val_cob = rand_r(&rnd_seed) % 100;
+            if (val_cob <= 9) {
+                current_state[idx].cover = COVER_AGUA;
+                current_state[idx].state = STATE_NAO_COMBUSTIVEL;
+            } else if (val_cob <= 19) {
+                current_state[idx].cover = COVER_SOLO_EXPOSTO;
+                current_state[idx].state = STATE_NAO_COMBUSTIVEL;
+            } else if (val_cob <= 54) {
+                current_state[idx].cover = COVER_VEGETACAO_RASTEIRA;
+                current_state[idx].state = STATE_INTACTA;
+            } else {
+                current_state[idx].cover = COVER_FLORESTA;
+                current_state[idx].state = STATE_INTACTA;
+            }
+
+            current_state[idx].humidity = (uint8_t)(rand_r(&rnd_seed) % 101);
+            current_state[idx].burn_time = 0;
+        }
+    }
+
+    // Aplicação e validação dos focos iniciais de incêndio
+    for (int32_t f = 0; f < n_fires; f++) {
+        size_t idx = (size_t)fire_centers[f].x * (size_t)columns + (size_t)fire_centers[f].y;
+
+        if (current_state[idx].cover == COVER_AGUA || current_state[idx].cover == COVER_SOLO_EXPOSTO) {
+            fprintf(stderr, "Foco inicial em (%d, %d) posicionado sobre célula não combustível!\n",
+                    fire_centers[f].x, fire_centers[f].y);
+            return 1;
+        }
+        current_state[idx].state = STATE_EM_CHAMAS;
+        if (current_state[idx].cover == COVER_VEGETACAO_RASTEIRA) {
+            current_state[idx].burn_time = 2;
+        } else if (current_state[idx].cover == COVER_FLORESTA) {
+            current_state[idx].burn_time = 4;
+        }
+    }
+
+    return 0;
+}
+
+// TODO: Implementar a construção do mapa de contenção
+int32_t mapa_de_contencao() {}
+
+
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Número de argumentos errado! Uso correto: ./fire_seq "
@@ -181,15 +310,46 @@ int main(int argc, char *argv[]) {
     }
 
     int32_t parse_res = parse_input(argv[1]);
+    if (parse_res != 0) {
+        if (fire_centers != NULL)
+            free(fire_centers);
+        if (zones != NULL)
+            free(zones);
+        exit(1);
+    }
+
+    uint32_t rnd_seed_original = rnd_seed;
+
+    int32_t gen_res = generate_matrix();
+    if (gen_res != 0) {
+        if (fire_centers != NULL)
+            free(fire_centers);
+        if (zones != NULL)
+            free(zones);
+        exit(1);
+    }
+
+    printf("Linhas: %d, Colunas: %d, Passos: %d, Threads: %d, Seed: %d, "
+           "Threshold: %.2f\n",
+           lines, columns, max_steps, nthreads, rnd_seed_original, fire_threshold);
+    printf("Vento: (%d, %d), Intensidade: %.2f\n", wind_l, wind_c, wind_str);
+    printf("Focos: %d, Zonas: %d\n", n_fires, n_zones);
+    for (int32_t i = 0; i < n_fires; i++) {
+        printf("Foco %d: (%d, %d)\n", i, fire_centers[i].x, fire_centers[i].y);
+    }
+    for (int32_t i = 0; i < n_zones; i++) {
+        printf("Zona %d: Passo %d, Limites: (%d, %d) a (%d, %d)\n", i,
+               zones[i].step, zones[i].bottom.x, zones[i].bottom.y,
+               zones[i].top.x, zones[i].top.y);
+    }
 
     if (fire_centers != NULL)
         free(fire_centers);
     if (zones != NULL)
         free(zones);
 
-    if (parse_res != 0) {
-        exit(1);
-    }
 
+
+    
     return 0;
 }
