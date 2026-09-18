@@ -59,6 +59,7 @@ int32_t n_focos = 0;
 int32_t n_zonas = 0;
 
 int32_t linhas, colunas, max_passos, nthreads;
+uint64_t total_celulas;
 uint32_t rnd_semente;
 float limiar_ignicao;
 
@@ -109,6 +110,8 @@ int32_t ler_entradas(const char *filename) {
         return 1;
     }
 
+    total_celulas = (uint64_t)(linhas * colunas);
+    
     // Leitura da segunda linha
     if (fgets(line_buff, 100, input_ptr) == NULL) {
         perror("Erro ao ler a linha 2");
@@ -185,19 +188,6 @@ int32_t ler_entradas(const char *filename) {
         }
     }
 
-    // TODO: Melhorar eficiencia da verificação de focos repetidos (usar hash table ou algo do tipo)
-    for (int32_t i = 0; i < n_focos; i++) {
-        for (int32_t j = i + 1; j < n_focos; j++) {
-            if (focos[i].x == focos[j].x &&
-                focos[i].y == focos[j].y) {
-                fprintf(stderr, "Foco repetido encontrado en (%d, %d)!\n",
-                        focos[i].x, focos[i].y);
-                fclose(input_ptr);
-                return 1;
-            }
-        }
-    }
-
     for (int32_t i = 0; i < n_zonas; i++) {
         if (fgets(line_buff, 100, input_ptr) == NULL) {
             perror("Erro ao ler entrada de zonas");
@@ -257,8 +247,6 @@ int32_t ler_entradas(const char *filename) {
 
 int32_t gerar_matriz() {
     // Alocação de memória para as matrizes de células
-    size_t total_celulas = (size_t)linhas * (size_t)colunas;
-
     matriz_atual = (celula_t *)malloc(total_celulas * sizeof(celula_t));
     matriz_prox = (celula_t *)malloc(total_celulas * sizeof(celula_t));
 
@@ -301,6 +289,10 @@ int32_t gerar_matriz() {
             fprintf(stderr, "Foco inicial em (%d, %d) posicionado sobre célula não combustível!\n",
                     focos[f].x, focos[f].y);
             return 1;
+        } else if (matriz_atual[idx].estado == EM_CHAMAS) {
+            fprintf(stderr, "Foco inicial em (%d, %d) repetido!\n",
+                    focos[f].x, focos[f].y);
+            return 1;
         }
 
         matriz_atual[idx].estado = EM_CHAMAS;
@@ -317,8 +309,6 @@ int32_t gerar_matriz() {
 }
 
 int32_t mapa_de_contencao() {
-    size_t total_celulas = (size_t)linhas * (size_t)colunas;
-
     ativacao = (int32_t *)malloc(total_celulas * sizeof(int32_t));
     if (ativacao == NULL) {
         fprintf(stderr, "Erro ao alocar memória para o mapa de ativação!\n");
@@ -330,7 +320,7 @@ int32_t mapa_de_contencao() {
     }
 
     for (int32_t z = 0; z < n_zonas; z++) {
-        int32_t step = zonas[z].passo_ativacao;
+        int32_t passo = zonas[z].passo_ativacao;
         int32_t r_min = zonas[z].fundo.x;
         int32_t r_max = zonas[z].topo.x;
         int32_t c_min = zonas[z].fundo.y;
@@ -340,8 +330,8 @@ int32_t mapa_de_contencao() {
             for (int32_t c = c_min; c <= c_max; c++) {
                 size_t idx = (size_t)r * (size_t)colunas + (size_t)c;
 
-                if (ativacao[idx] == -1 || step < ativacao[idx]) {
-                    ativacao[idx] = step;
+                if (ativacao[idx] == -1 || passo < ativacao[idx]) {
+                    ativacao[idx] = passo;
                 }
             }
         }
@@ -350,9 +340,7 @@ int32_t mapa_de_contencao() {
     return 0;
 }
 
-void simulation() {
-    size_t total_celulas = (size_t)linhas * (size_t)colunas;
-     
+void simulacao() {
     for (int32_t p = 0; p < max_passos; p++) {
         // Passo 1: ativar as zonas programadas para p
         for (size_t i = 0; i < total_celulas; i++) {
@@ -362,10 +350,12 @@ void simulation() {
                 }
             }
         }
+        
+        size_t idx = 0;
+        
         // Passo 2: atualizar o estado das células
         for (int32_t r = 0; r < linhas; r++) {
             for (int32_t c = 0; c < colunas; c++) {
-                size_t idx = (size_t)r * (size_t)colunas + (size_t)c;
                 celula_t curr = matriz_atual[idx];
                 celula_t next = curr; // Copia propriedades base (cobertura, umidade)
 
@@ -389,7 +379,7 @@ void simulation() {
 
                     case INTACTA: {
                         // Cálculo do potencial de ignição
-                        int32_t S = 0; // Suma
+                        int32_t S = 0; // Soma
 
                         // Por cada vizinho...
                         for (int k = 0; k < 8; k++) {
@@ -423,19 +413,29 @@ void simulation() {
                         }
 
                         // Potencial de ignição em aritmética inteira truncada[cite: 1]
-                        int32_t I = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade)) / 100;
 
-                        if (I >= (int32_t)limiar_ignicao) {
+                        // Ao inves de I = J/100, e I >= LIMIAR, fazer
+                        // J >= LIMIAR * 100,
+                        // pois garanto valores inteiros nas operacoes, ao
+                        // inves de aproximar
+
+                        // int32_t I = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade)) / 100;
+                        
+                        int32_t J = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade));
+
+                        if (J >= (int32_t)limiar_ignicao * 100) {
                             next.estado = EM_CHAMAS;
                             next.tempo_queima = (curr.cobertura == VEGETACAO_RASTEIRA) ? 2 : 4;
                         } else {
                             next.estado = INTACTA;
-                            next.tempo_queima = 0;
+                            next.tempo_queima = 0; // NOTE: Parece que nao preciso disso
                         }
                         break;
                     }
                 }
+
                 matriz_prox[idx] = next;
+                idx++;
             }
         }
 
@@ -487,6 +487,7 @@ int main(int argc, char *argv[]) {
 
     
     // si el nombre del archivo empieza con "tests/"
+    // se o nome do arquivo começar com "tests/"
     if (strncmp(argv[1], "tests/", 6) == 0) {
         printf("Linhas: %d, Colunas: %d, Passos: %d, Threads: %d, Seed: %d, "
             "Threshold: %.2f\n",
@@ -518,7 +519,7 @@ int main(int argc, char *argv[]) {
     }
 
 
-    simulation();
+    simulacao();
     free(focos);
     free(zonas);
     free(matriz_atual);
