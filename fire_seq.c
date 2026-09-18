@@ -48,20 +48,21 @@ typedef struct {
     pos_t fundo;
 } zona_t;
 
+// Ponteiros para memoria
 celula_t *matriz_atual = NULL;
 celula_t *matriz_prox = NULL;
-
 int32_t *ativacao = NULL;
-
 pos_t *focos = NULL;
 zona_t *zonas = NULL;
+
 int32_t n_focos = 0;
 int32_t n_zonas = 0;
 
 int32_t linhas, colunas, max_passos, nthreads;
 uint64_t total_celulas;
 uint32_t rnd_semente;
-float limiar_ignicao;
+int32_t limiar_ignicao;
+uint64_t total_ignicoes = 0;
 
 int8_t vento_l, vento_c;
 float vento_int;
@@ -69,7 +70,7 @@ float vento_int;
 // Fatores de combustível
 const int32_t fator_comb[4] = {0, 0, 8, 12};
 // vizinhos de Moore (8 vizinhos)
-const int dr[8] = {-1, -1, -1,  0, 0,  1, 1, 1};
+const int dl[8] = {-1, -1, -1,  0, 0,  1, 1, 1};
 const int dc[8] = {-1,  0,  1, -1, 1, -1, 0, 1};
 
 // [Nicholas] NOTE: Talvez seja válido simplificar a lógica...
@@ -93,7 +94,7 @@ int32_t ler_entradas(const char *filename) {
     // OBS: O parsing das entradas não detecta under/over flow das entradas
     scn_res = sscanf(
         line_buff,
-        "%" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNu32 " %f",
+        "%" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNd32 " %" SCNu32 " %" SCNd32,
         &linhas, &colunas, &max_passos, &nthreads, &rnd_semente, &limiar_ignicao);
     
     // Se o número de entradas lidas for diferente de 6, então retornar erro.
@@ -354,7 +355,7 @@ void simulacao() {
         size_t idx = 0;
         
         // Passo 2: atualizar o estado das células
-        for (int32_t r = 0; r < linhas; r++) {
+        for (int32_t l = 0; l < linhas; l++) {
             for (int32_t c = 0; c < colunas; c++) {
                 celula_t curr = matriz_atual[idx];
                 celula_t next = curr; // Copia propriedades base (cobertura, umidade)
@@ -383,18 +384,23 @@ void simulacao() {
 
                         // Por cada vizinho...
                         for (int k = 0; k < 8; k++) {
-                            int32_t nr = r + dr[k];
+                            int32_t nl = l + dl[k];
                             int32_t nc = c + dc[k];
 
                             // Ignora vizinhos fora da matriz
-                            if (nr < 0 || nr >= linhas || nc < 0 || nc >= colunas) {
+                            if (nl < 0 || nl >= linhas || nc < 0 || nc >= colunas) {
                                 continue;
                             }
 
-                            size_t n_idx = (size_t)nr * (size_t)colunas + (size_t)nc;
+                            size_t n_idx = (size_t)nl * (size_t)colunas + (size_t)nc;
                             if (matriz_atual[n_idx].estado == EM_CHAMAS) {
-                                int32_t prop_linha = r - nr;
-                                int32_t prop_coluna = c - nc;
+                                // [Nota para Nicholas] NOTE: na verdade prop_linha eh
+                                // dl[k] e dc[k] respectivamente, mas fica que nem no
+                                // documento
+                                // int32_t prop_linha = l - nl;
+                                // int32_t prop_coluna = c - nc;
+                                int32_t prop_linha = (int32_t) dl[k];
+                                int32_t prop_coluna = (int32_t) dc[k];
                                 
                                 // Vizinhos ortogonais contribuem com 10, diagonais com 7
                                 int32_t abs_l = prop_linha < 0 ? -prop_linha : prop_linha;
@@ -417,15 +423,16 @@ void simulacao() {
                         // Ao inves de I = J/100, e I >= LIMIAR, fazer
                         // J >= LIMIAR * 100,
                         // pois garanto valores inteiros nas operacoes, ao
-                        // inves de aproximar
+                        // inves de arredondamento por divisao
 
                         // int32_t I = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade)) / 100;
                         
                         int32_t J = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade));
 
-                        if (J >= (int32_t)limiar_ignicao * 100) {
+                        if (J >= limiar_ignicao * 100) {
                             next.estado = EM_CHAMAS;
                             next.tempo_queima = (curr.cobertura == VEGETACAO_RASTEIRA) ? 2 : 4;
+                            total_ignicoes++;
                         } else {
                             next.estado = INTACTA;
                             next.tempo_queima = 0; // NOTE: Parece que nao preciso disso
@@ -490,7 +497,7 @@ int main(int argc, char *argv[]) {
     // se o nome do arquivo começar com "tests/"
     if (strncmp(argv[1], "tests/", 6) == 0) {
         printf("Linhas: %d, Colunas: %d, Passos: %d, Threads: %d, Seed: %d, "
-            "Threshold: %.2f\n",
+            "Threshold: %d\n",
             linhas, colunas, max_passos, nthreads, rnd_seed_original, limiar_ignicao);
         printf("Vento: (%d, %d), Intensidade: %.2f\n", vento_l, vento_c, vento_int);
         printf("Focos: %d, Zonas: %d\n", n_focos, n_zonas);
