@@ -257,10 +257,10 @@ int32_t ler_entradas(const char *filename) {
 
 int32_t gerar_matriz() {
     // Alocação de memória para as matrizes de células
-    size_t total_cells = (size_t)linhas * (size_t)colunas;
+    size_t total_celulas = (size_t)linhas * (size_t)colunas;
 
-    matriz_atual = (celula_t *)malloc(total_cells * sizeof(celula_t));
-    matriz_prox = (celula_t *)malloc(total_cells * sizeof(celula_t));
+    matriz_atual = (celula_t *)malloc(total_celulas * sizeof(celula_t));
+    matriz_prox = (celula_t *)malloc(total_celulas * sizeof(celula_t));
 
     if (matriz_atual == NULL || matriz_prox == NULL) {
         fprintf(stderr, "Erro ao alocar memória para a matriz de células!\n");
@@ -317,15 +317,15 @@ int32_t gerar_matriz() {
 }
 
 int32_t mapa_de_contencao() {
-    size_t total_cells = (size_t)linhas * (size_t)colunas;
+    size_t total_celulas = (size_t)linhas * (size_t)colunas;
 
-    ativacao = (int32_t *)malloc(total_cells * sizeof(int32_t));
+    ativacao = (int32_t *)malloc(total_celulas * sizeof(int32_t));
     if (ativacao == NULL) {
         fprintf(stderr, "Erro ao alocar memória para o mapa de ativação!\n");
         return 1;
     }
 
-    for (size_t i = 0; i < total_cells; i++) {
+    for (size_t i = 0; i < total_celulas; i++) {
         ativacao[i] = -1;
     }
 
@@ -351,11 +351,11 @@ int32_t mapa_de_contencao() {
 }
 
 void simulation() {
-    size_t total_cells = (size_t)linhas * (size_t)colunas;
+    size_t total_celulas = (size_t)linhas * (size_t)colunas;
      
     for (int32_t p = 0; p < max_passos; p++) {
         // Passo 1: ativar as zonas programadas para p
-        for (size_t i = 0; i < total_cells; i++) {
+        for (size_t i = 0; i < total_celulas; i++) {
             if (ativacao[i] == p) {
                 if (matriz_atual[i].estado == INTACTA) {
                     matriz_atual[i].estado = CONTENCAO;
