@@ -23,8 +23,7 @@ typedef enum {
 typedef struct {
     cobertura_t cobertura;
     uint8_t umidade;
-    estado_t estado;
-    uint8_t tempo_queima;
+    // estado_t estado;
 } celula_t;
 
 typedef struct {
@@ -49,20 +48,20 @@ typedef struct {
 } zona_t;
 
 // Ponteiros para memoria
-celula_t *matriz_atual = NULL;
-celula_t *matriz_prox = NULL;
-int32_t *ativacao = NULL;
 pos_t *focos = NULL;
 zona_t *zonas = NULL;
+celula_t *dados_celulas = NULL;
+int32_t *ativacao = NULL;
+estado_t *estado_atual = NULL;
+estado_t *proximo_estado = NULL;
+int32_t *tempo_atual = NULL;
+int32_t *proximo_tempo = NULL;
 
 int32_t n_focos = 0;
 int32_t n_zonas = 0;
-
 int32_t linhas, colunas, max_passos, nthreads;
-uint64_t total_celulas;
 uint32_t rnd_semente;
 int32_t limiar_ignicao;
-uint64_t total_ignicoes = 0;
 
 int8_t vento_l, vento_c;
 float vento_int;
@@ -71,7 +70,61 @@ float vento_int;
 const int32_t fator_comb[4] = {0, 0, 8, 12};
 // vizinhos de Moore (8 vizinhos)
 const int dl[8] = {-1, -1, -1,  0, 0,  1, 1, 1};
+
 const int dc[8] = {-1,  0,  1, -1, 1, -1, 0, 1};
+
+// Variaveis para os resultados
+int64_t total_ignicoes = 0;
+int32_t pico_ignicoes_passo = -1;
+int64_t pico_ignicoes_quant = 0;
+int32_t combustiveis_iniciais = 0;
+int32_t contencao = 0;
+
+int32_t passo;
+
+uint64_t calc_checksum(void) {
+    uint64_t checksum = 0;
+
+    for (int64_t i = 0; i < linhas * colunas; i++) {
+        checksum = checksum * UINT64_C(31) + (uint64_t)estado_atual[i];
+
+        checksum = checksum * UINT64_C(31) + (uint64_t)tempo_atual[i];
+    }
+
+    return checksum;
+}
+
+int32_t alocar_memoria() {
+    focos = (pos_t *)malloc((size_t)n_focos * sizeof(pos_t));
+    zonas = (zona_t *)malloc((size_t)n_zonas * sizeof(zona_t));
+    // NOTE: Lembre-se de posteriormente remover matriz_atual e prox
+    int64_t total_celulas = linhas * colunas;
+    dados_celulas = (celula_t *)malloc(total_celulas * sizeof(celula_t));
+    ativacao = (int32_t *)malloc(total_celulas * sizeof(int32_t));
+    estado_atual = (estado_t *)malloc(total_celulas * sizeof(estado_t));
+    proximo_estado = (estado_t *)malloc(total_celulas * sizeof(estado_t));
+    tempo_atual = (int32_t *)calloc((size_t)total_celulas, sizeof(int32_t));
+    proximo_tempo = (int32_t *)calloc((size_t)total_celulas, sizeof(int32_t));
+
+    if (focos == NULL || zonas == NULL || dados_celulas == NULL ||
+        ativacao == NULL || estado_atual == NULL || proximo_estado == NULL ||
+        tempo_atual == NULL || proximo_tempo == NULL) {
+        return 1;
+    }
+
+    return 0;
+}
+
+void limpar_memoria() {
+    if (focos) free(focos);
+    if (zonas) free(zonas);
+    if (dados_celulas) free(dados_celulas);
+    if (ativacao) free(ativacao);
+    if (estado_atual) free(estado_atual);
+    if (proximo_estado) free(proximo_estado);
+    if (tempo_atual) free(tempo_atual);
+    if (proximo_tempo) free(proximo_tempo);
+}
 
 // [Nicholas] NOTE: Talvez seja válido simplificar a lógica...
 int32_t ler_entradas(const char *filename) {
@@ -111,8 +164,6 @@ int32_t ler_entradas(const char *filename) {
         return 1;
     }
 
-    total_celulas = (uint64_t)(linhas * colunas);
-    
     // Leitura da segunda linha
     if (fgets(line_buff, 100, input_ptr) == NULL) {
         perror("Erro ao ler a linha 2");
@@ -160,8 +211,12 @@ int32_t ler_entradas(const char *filename) {
         return 1;
     }
 
-    focos = (pos_t *)malloc((size_t)n_focos * sizeof(pos_t));
-    zonas = (zona_t *)malloc((size_t)n_zonas * sizeof(zona_t));
+    // Alocacao de memoria (unificado)
+    if (alocar_memoria() != 0) {
+        perror("Erro ao alocar memória inicial");
+        fclose(input_ptr);
+        return 1;
+    }
 
     for (int32_t i = 0; i < n_focos; i++) {
         if (fgets(line_buff, 100, input_ptr) == NULL) {
@@ -239,7 +294,7 @@ int32_t ler_entradas(const char *filename) {
             "Arquivo não exaustado - formatado incorretamente!\nComportamento "
             "não esperado pode ocorrer.\n");
     } else {
-        printf("Arquivo lido com sucesso!\n");
+        // printf("Arquivo lido com sucesso!\n");
     }
 
     fclose(input_ptr);
@@ -247,15 +302,6 @@ int32_t ler_entradas(const char *filename) {
 }
 
 int32_t gerar_matriz() {
-    // Alocação de memória para as matrizes de células
-    matriz_atual = (celula_t *)malloc(total_celulas * sizeof(celula_t));
-    matriz_prox = (celula_t *)malloc(total_celulas * sizeof(celula_t));
-
-    if (matriz_atual == NULL || matriz_prox == NULL) {
-        fprintf(stderr, "Erro ao alocar memória para a matriz de células!\n");
-        return 1;
-    }
-
     // Geração sequencial da cobertura e umidade
     for (int32_t i = 0; i < linhas; i++) {
         for (int32_t j = 0; j < colunas; j++) {
@@ -264,21 +310,22 @@ int32_t gerar_matriz() {
             // Geração da cobertura
             int val_cob = rand_r(&rnd_semente) % 100;
             if (val_cob <= 9) {
-                matriz_atual[idx].cobertura = AGUA;
-                matriz_atual[idx].estado = NAO_COMBUSTIVEL;
+                dados_celulas[idx].cobertura = AGUA;
+                estado_atual[idx] = NAO_COMBUSTIVEL;
             } else if (val_cob <= 19) {
-                matriz_atual[idx].cobertura = SOLO_EXPOSTO;
-                matriz_atual[idx].estado = NAO_COMBUSTIVEL;
+                dados_celulas[idx].cobertura = SOLO_EXPOSTO;
+                estado_atual[idx] = NAO_COMBUSTIVEL;
             } else if (val_cob <= 54) {
-                matriz_atual[idx].cobertura = VEGETACAO_RASTEIRA;
-                matriz_atual[idx].estado = INTACTA;
+                dados_celulas[idx].cobertura = VEGETACAO_RASTEIRA;
+                estado_atual[idx] = INTACTA;
+                combustiveis_iniciais++;
             } else {
-                matriz_atual[idx].cobertura = FLORESTA;
-                matriz_atual[idx].estado = INTACTA;
+                dados_celulas[idx].cobertura = FLORESTA;
+                estado_atual[idx] = INTACTA;
+                combustiveis_iniciais++;
             }
 
-            matriz_atual[idx].umidade = (uint8_t)(rand_r(&rnd_semente) % 101);
-            matriz_atual[idx].tempo_queima = 0;
+            dados_celulas[idx].umidade = (uint8_t)(rand_r(&rnd_semente) % 101);
         }
     }
 
@@ -286,98 +333,126 @@ int32_t gerar_matriz() {
     for (int32_t f = 0; f < n_focos; f++) {
         size_t idx = (size_t)focos[f].x * (size_t)colunas + (size_t)focos[f].y;
 
-        if (matriz_atual[idx].cobertura == AGUA || matriz_atual[idx].cobertura == SOLO_EXPOSTO) {
+        if (dados_celulas[idx].cobertura == AGUA || dados_celulas[idx].cobertura == SOLO_EXPOSTO) {
             fprintf(stderr, "Foco inicial em (%d, %d) posicionado sobre célula não combustível!\n",
                     focos[f].x, focos[f].y);
             return 1;
-        } else if (matriz_atual[idx].estado == EM_CHAMAS) {
+        } else if (estado_atual[idx] == EM_CHAMAS) {
             fprintf(stderr, "Foco inicial em (%d, %d) repetido!\n",
                     focos[f].x, focos[f].y);
             return 1;
         }
 
-        matriz_atual[idx].estado = EM_CHAMAS;
+        estado_atual[idx] = EM_CHAMAS;
 
-        if (matriz_atual[idx].cobertura == VEGETACAO_RASTEIRA) {
-            matriz_atual[idx].tempo_queima = 2;
-        } else if (matriz_atual[idx].cobertura == FLORESTA) {
-            matriz_atual[idx].tempo_queima = 4;
+        if (dados_celulas[idx].cobertura == VEGETACAO_RASTEIRA) {
+            tempo_atual[idx] = 2;
+        } else if (dados_celulas[idx].cobertura == FLORESTA) {
+            tempo_atual[idx] = 4;
         }
     }
 
-    printf("Matriz gerada com sucesso!\n");
+    // printf("Matriz gerada com sucesso!\n");
     return 0;
 }
 
 int32_t mapa_de_contencao() {
-    ativacao = (int32_t *)malloc(total_celulas * sizeof(int32_t));
-    if (ativacao == NULL) {
-        fprintf(stderr, "Erro ao alocar memória para o mapa de ativação!\n");
-        return 1;
-    }
-
-    for (size_t i = 0; i < total_celulas; i++) {
+    for (size_t i = 0; i < linhas * colunas; i++) {
         ativacao[i] = -1;
     }
 
     for (int32_t z = 0; z < n_zonas; z++) {
         int32_t passo = zonas[z].passo_ativacao;
-        int32_t r_min = zonas[z].fundo.x;
-        int32_t r_max = zonas[z].topo.x;
+        int32_t l_min = zonas[z].fundo.x;
+        int32_t l_max = zonas[z].topo.x;
         int32_t c_min = zonas[z].fundo.y;
         int32_t c_max = zonas[z].topo.y;
 
-        for (int32_t r = r_min; r <= r_max; r++) {
+        for (int32_t l = l_min; l <= l_max; l++) {
             for (int32_t c = c_min; c <= c_max; c++) {
-                size_t idx = (size_t)r * (size_t)colunas + (size_t)c;
+                size_t idx = (size_t)l * (size_t)colunas + (size_t)c;
 
+                if (ativacao[idx] == -1)
+                    contencao++;
                 if (ativacao[idx] == -1 || passo < ativacao[idx]) {
                     ativacao[idx] = passo;
                 }
             }
         }
     }
-    printf("Mapa de contenção gerado com sucesso!\n");
+
+    // printf("Mapa de contenção gerado com sucesso!\n");
     return 0;
 }
 
+void imprime_estado() {
+    int64_t k = 0;
+
+    for (int64_t idx = 0; idx < linhas * colunas; idx++) {
+        char c;
+        switch (estado_atual[idx]) {
+            case NAO_COMBUSTIVEL:
+                c = 'n';
+                break;
+            case INTACTA:
+                c = 'i';
+                break;
+            case EM_CHAMAS:
+                c = 'a';
+                break;
+            case QUEIMADA:
+                c = 'q';
+                break;
+            case CONTENCAO:
+                c = 'c';
+                break;
+        }
+
+        if (++k < colunas) {
+            printf("%c", c);
+        } else {
+            printf("%c\n", c);
+            k = 0;
+        }
+    }
+}
+
 void simulacao() {
-    for (int32_t p = 0; p < max_passos; p++) {
+    // Verificar no comeco se temos focos iniciais para comeco de conversa
+    // (ou seja, se n_focos > 0)
+    if (n_focos <= 0) {
+        return;
+    }
+    
+    for (passo = 0; passo < max_passos; passo++) {
         // Passo 1: ativar as zonas programadas para p
-        for (size_t i = 0; i < total_celulas; i++) {
-            if (ativacao[i] == p) {
-                if (matriz_atual[i].estado == INTACTA) {
-                    matriz_atual[i].estado = CONTENCAO;
-                }
+        // WARNING: Estamos lendo e escrevendo estado_atual, tomar cuidado
+        //
+        // NOTE: Para o codigo sequencial, eu acho que a gente nem precisa
+        // ativar as zonas, bastaria verificar o vetor de ativacao na hora
+        // de espalhar o fogo
+        for (size_t idx = 0; idx < linhas * colunas; idx++) {
+            if (ativacao[idx] == passo && estado_atual[idx] == INTACTA) {
+                estado_atual[idx] = CONTENCAO;
             }
         }
-        
-        size_t idx = 0;
-        
+
         // Passo 2: atualizar o estado das células
+        int64_t novas_ignicoes = 0;
+
         for (int32_t l = 0; l < linhas; l++) {
             for (int32_t c = 0; c < colunas; c++) {
-                celula_t curr = matriz_atual[idx];
-                celula_t next = curr; // Copia propriedades base (cobertura, umidade)
+                size_t idx = l * colunas + c;
 
-                switch (curr.estado) {
+                switch (estado_atual[idx]) {
                     case NAO_COMBUSTIVEL:
                     case QUEIMADA:
+                        proximo_estado[idx] = estado_atual[idx];
+                        break;
                     case CONTENCAO:
+                        // printf("Estou vendo conteção em linha %" PRId32 " e coluna %" PRId32 "\n", l+1, c+1);
+                        proximo_estado[idx] = INTACTA;
                         break;
-
-                    case EM_CHAMAS: {
-                        uint8_t novo_tempo = curr.tempo_queima - 1;
-                        if (novo_tempo == 0) {
-                            next.estado = QUEIMADA;
-                            next.tempo_queima = 0;
-                        } else {
-                            next.estado = EM_CHAMAS;
-                            next.tempo_queima = novo_tempo;
-                        }
-                        break;
-                    }
-
                     case INTACTA: {
                         // Cálculo do potencial de ignição
                         int32_t S = 0; // Soma
@@ -393,16 +468,16 @@ void simulacao() {
                             }
 
                             size_t n_idx = (size_t)nl * (size_t)colunas + (size_t)nc;
-                            if (matriz_atual[n_idx].estado == EM_CHAMAS) {
+                            if (estado_atual[n_idx] == EM_CHAMAS) {
                                 // [Nota para Nicholas] NOTE: na verdade prop_linha eh
                                 // dl[k] e dc[k] respectivamente, mas fica que nem no
                                 // documento
-                                // int32_t prop_linha = l - nl;
-                                // int32_t prop_coluna = c - nc;
-                                int32_t prop_linha = (int32_t) dl[k];
-                                int32_t prop_coluna = (int32_t) dc[k];
+                                int32_t prop_linha = (int32_t) -dl[k];
+                                int32_t prop_coluna = (int32_t) -dc[k];
                                 
                                 // Vizinhos ortogonais contribuem com 10, diagonais com 7
+                                //
+                        
                                 int32_t abs_l = prop_linha < 0 ? -prop_linha : prop_linha;
                                 int32_t abs_c = prop_coluna < 0 ? -prop_coluna : prop_coluna;
                                 int32_t p_basico = (abs_l + abs_c == 1) ? 10 : 7;
@@ -425,37 +500,58 @@ void simulacao() {
                         // pois garanto valores inteiros nas operacoes, ao
                         // inves de arredondamento por divisao
 
-                        // int32_t I = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade)) / 100;
-                        
-                        int32_t J = (S * fator_comb[curr.cobertura] * (100 - (int32_t)curr.umidade));
+                        // int32_t I = (S * fator_comb[dados_celulas[idx].cobertura] * (100 - (int32_t)dados_celulas[idx].umidade))/100;
+                        int32_t J = (S * fator_comb[dados_celulas[idx].cobertura] * (100 - (int32_t)dados_celulas[idx].umidade));
 
                         if (J >= limiar_ignicao * 100) {
-                            next.estado = EM_CHAMAS;
-                            next.tempo_queima = (curr.cobertura == VEGETACAO_RASTEIRA) ? 2 : 4;
-                            total_ignicoes++;
+                            proximo_estado[idx] = EM_CHAMAS;
+                            proximo_tempo[idx] = (dados_celulas[idx].cobertura == VEGETACAO_RASTEIRA) ? 2 : 4;
+                            novas_ignicoes++;
                         } else {
-                            next.estado = INTACTA;
-                            next.tempo_queima = 0; // NOTE: Parece que nao preciso disso
+                            proximo_estado[idx] = INTACTA;
+                            proximo_tempo[idx] = 0;
+                        }
+                        break;
+                    }
+
+                    case EM_CHAMAS: {
+                        proximo_tempo[idx] = tempo_atual[idx] - 1;
+                        if (proximo_tempo[idx] == 0) {
+                            proximo_estado[idx] = QUEIMADA;
+                        } else {
+                            proximo_estado[idx] = EM_CHAMAS;
                         }
                         break;
                     }
                 }
-
-                matriz_prox[idx] = next;
-                idx++;
             }
         }
 
         // Passo 3: calcular as estatísticas do próximo estado
+        total_ignicoes += novas_ignicoes;
+        if (novas_ignicoes > pico_ignicoes_quant) {
+            pico_ignicoes_quant = novas_ignicoes;
+            pico_ignicoes_passo = passo;
+        }
 
         // Passo 4: Trocar as matrizes
-        celula_t *temp = matriz_atual;
-        matriz_atual = matriz_prox;
-        matriz_prox = temp;
+        int32_t *temp_tempo = tempo_atual;
+        tempo_atual = proximo_tempo;
+        proximo_tempo = temp_tempo;
+
+        estado_t *temp_estado = estado_atual;
+        estado_atual = proximo_estado;
+        proximo_estado = temp_estado;
+
+        // Passo DEBUG: imprimir estado
+        // imprime_estado();
+        // fflush(0);
 
         // Passo 5: verificar a condição de parada
+        //
 
-        printf("Passo %d concluído.\n", p);
+
+        // printf("Passo %d concluído.\n", passo);
     }
 }
 
@@ -468,27 +564,19 @@ int main(int argc, char *argv[]) {
     }
 
     if (ler_entradas(argv[1]) != 0) {
-        free(focos);
-        free(zonas);
+        limpar_memoria();
         exit(1);
     }
 
     uint32_t rnd_seed_original = rnd_semente;
 
     if (gerar_matriz() != 0) {
-        free(focos);
-        free(zonas);
-        free(matriz_atual);
-        free(matriz_prox);
+        limpar_memoria();
         exit(1);
     }
 
     if (mapa_de_contencao() != 0) {
-        free(focos);
-        free(zonas);
-        free(matriz_atual);
-        free(matriz_prox);
-        free(ativacao);
+        limpar_memoria();
         exit(1);
     }
 
@@ -526,12 +614,20 @@ int main(int argc, char *argv[]) {
     }
 
 
+    fflush(0);
+
+    // imprime_estado();
+    // // printf("Configuracao inicial concluído.\n");
+    // fflush(0);
+    double inicio = omp_get_wtime();
     simulacao();
-    free(focos);
-    free(zonas);
-    free(matriz_atual);
-    free(matriz_prox);
-    free(ativacao);
+    double fim = omp_get_wtime();
+
+    printf("passos: %" PRId32 "\n", passo);
+    printf("total_ignicoes: %" PRId64 "\n", total_ignicoes);
+    printf("pico_ignicoes: %" PRId32 " %" PRId64 "\n", pico_ignicoes_passo, pico_ignicoes_quant);
+    printf("tempo: %.6lf\n", fim - inicio);
+    limpar_memoria();
 
     return 0;
 }
