@@ -518,7 +518,7 @@ void simular(const Configuracao *configuracao, Floresta *floresta,
                 }
                 else if (estado == ESTADO_CONTENCAO)
                 {
-                    floresta->proximo_estado[indice_celula] = ESTADO_CONTENCAO;
+                    floresta->proximo_estado[indice_celula] = ESTADO_INTACTA;
                     floresta->proximo_tempo[indice_celula] = 0;
                 }
             }
