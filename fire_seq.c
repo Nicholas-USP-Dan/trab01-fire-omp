@@ -451,7 +451,7 @@ void simulacao() {
                         break;
                     case CONTENCAO:
                         // printf("Estou vendo conteção em linha %" PRId32 " e coluna %" PRId32 "\n", l+1, c+1);
-                        proximo_estado[idx] = INTACTA;
+                        proximo_estado[idx] = CONTENCAO;
                         break;
                     case INTACTA: {
                         // Cálculo do potencial de ignição
