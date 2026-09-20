@@ -691,6 +691,11 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    // Sem OMP_SCHEDULE, o libgomp assume dynamic,1 e serializa os laços.
+    // O override pela variável de ambiente continua valendo.
+    if (getenv("OMP_SCHEDULE") == NULL)
+        omp_set_schedule(omp_sched_static, 0);
+
     FILE *arquivo = fopen(argv[1], "r");
 
     if (arquivo == NULL)
