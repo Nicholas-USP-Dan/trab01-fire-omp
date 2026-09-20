@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -115,14 +116,23 @@ long long indice(const Configuracao *configuracao, int linha, int coluna)
 
 int ler_configuracao(FILE *arquivo, Configuracao *configuracao)
 {
-    if (fscanf(arquivo, "%d %d %d %d %u %d",
-               &configuracao->L, &configuracao->C, &configuracao->P, &configuracao->T,
-               &configuracao->seed, &configuracao->LIMIAR) != 6)
+    long long L, C, P, T, seed, LIMIAR;
+
+    if (fscanf(arquivo, "%lld %lld %lld %lld %lld %lld",
+               &L, &C, &P, &T, &seed, &LIMIAR) != 6)
         return 0;
 
-    if (configuracao->L <= 0 || configuracao->C <= 0 || configuracao->P < 0 ||
-        configuracao->T <= 0 || configuracao->LIMIAR <= 0)
+    if (L <= 0 || C <= 0 || P < 0 || T <= 0 || LIMIAR <= 0 || seed < 0 ||
+        L > INT_MAX || C > INT_MAX || P > INT_MAX || T > INT_MAX ||
+        LIMIAR > INT_MAX || seed > UINT_MAX)
         return 0;
+
+    configuracao->L = (int)L;
+    configuracao->C = (int)C;
+    configuracao->P = (int)P;
+    configuracao->T = (int)T;
+    configuracao->seed = (unsigned int)seed;
+    configuracao->LIMIAR = (int)LIMIAR;
 
     return 1;
 }
