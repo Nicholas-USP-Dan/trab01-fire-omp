@@ -1,0 +1,12 @@
+data: 2026-09-21T15:13:13-03:00
+cpu: AMD Ryzen 7 5700X 8-Core Processor
+nucleos_fisicos: 8
+threads_logicas: 16
+l3: 32 MiB (1 instance)
+memoria: 31Gi
+so: Ubuntu 24.04.4 LTS
+kernel: 7.0.0-31-generic
+gcc: gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+cflags: -std=c99 -fopenmp -O2
+repeticoes: 5
+loadavg_inicial: 0.59
