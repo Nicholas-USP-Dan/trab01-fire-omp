@@ -156,6 +156,14 @@ def carregar(caminho):
     return {k: st.median(v) for k, v in amostras.items()}
 
 
+def ambiente():
+    """Le bench/ambiente.txt para o subtitulo das figuras."""
+    caminho = os.path.join(BENCH, "ambiente.txt")
+    if not os.path.exists(caminho):
+        return {}
+    return dict(l.split(": ", 1) for l in open(caminho).read().splitlines() if ": " in l)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--csv", default=os.path.join(BENCH, "raw.csv"))
@@ -165,8 +173,18 @@ def main():
     p.add_argument("--schedules", nargs="+",
                    default=["static", "dynamic-64", "guided"])
     p.add_argument("--threads", nargs="+", type=int, default=[1, 2, 4, 8, 16])
-    p.add_argument("--nucleos-fisicos", type=int, default=8)
+    p.add_argument("--nucleos-fisicos", type=int, default=None)
     args = p.parse_args()
+
+    amb = ambiente()
+    if args.nucleos_fisicos is None:
+        args.nucleos_fisicos = int(amb.get("nucleos_fisicos", 8))
+    descricao = (f"{amb.get('cpu', 'CPU desconhecida')} "
+                 f"({amb.get('nucleos_fisicos', '?')} nucleos / "
+                 f"{amb.get('threads_logicas', '?')} threads) - "
+                 f"gcc {amb.get('gcc', '').split()[-2] if amb.get('gcc') else '?'} "
+                 f"{amb.get('cflags', '').split()[-1]} - mediana de "
+                 f"{amb.get('repeticoes', '?')} execucoes")
 
     if not os.path.exists(args.csv):
         sys.exit(f"nao encontrei {args.csv} - rode antes: bash bench/run.sh")
@@ -192,6 +210,10 @@ def main():
         return out
 
     marca = (args.nucleos_fisicos, f"{args.nucleos_fisicos} nucleos fisicos")
+    melhor = max(med[(c, "seq", 1, "static")] / med[(c, "omp", t, s)]
+                 for c in args.cargas for s in args.schedules for t in T
+                 if (c, "omp", t, s) in med)
+    teto_speedup = max(5, round(melhor * 1.3) + 1)
 
     if args.metrica in ("speedup", "ambos"):
         print("speedup:")
@@ -199,9 +221,9 @@ def main():
             paineis_de(lambda base, t, v: base / v),
             ylabel="speedup", arquivo="speedup",
             titulo="Speedup por numero de threads",
-            subtitulo="AMD Ryzen 7 5700X (8 nucleos / 16 threads) · gcc 13.3 -O2 · mediana de 5 execucoes",
+            subtitulo=descricao,
             referencia=(T, T, "linear ideal"), estilos_serie={"guided": FAIXA},
-            marca_vertical=marca, ylim=(0, 9))
+            marca_vertical=marca, ylim=(0, teto_speedup))
 
     if args.metrica in ("eficiencia", "ambos"):
         print("eficiencia:")
@@ -209,7 +231,7 @@ def main():
             paineis_de(lambda base, t, v: base / v / t * 100),
             ylabel="eficiencia", arquivo="eficiencia",
             titulo="Eficiencia por numero de threads",
-            subtitulo="Eficiencia = speedup / threads. Acima de 8 threads nao ha nucleos fisicos adicionais.",
+            subtitulo=f"Eficiencia = speedup / threads. Acima de {args.nucleos_fisicos} threads nao ha nucleos fisicos adicionais.",
             referencia=(T, [100] * len(T), "100%"),
             marca_vertical=marca, ylim=(0, 118), loc_legenda="lower left",
             estilos_serie={"guided": FAIXA},
