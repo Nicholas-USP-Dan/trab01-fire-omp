@@ -15,7 +15,7 @@ Primeiro Trabalho Prático (TB1), turma G09
 ## 1. Introdução
 
 Este trabalho implementa a simulação da propagação de incêndio em uma área florestal
-representada por uma matriz de `L × C` células, sob influência de vento direcional e de zonas
+representada por uma matriz de `L * C` células, sob influência de vento direcional e de zonas
 de contenção ativadas em passos pré-determinados. Foram desenvolvidas duas versões: uma
 sequencial (`fire_seq.c`) e uma paralela em OpenMP (`fire_omp.c`).
 
@@ -27,7 +27,7 @@ estratégia de paralelização descrita adiante.
 
 ### 2.1 Estruturas de dados
 
-A área é representada por vetores lineares de `L × C` posições, indexados por
+A área é representada por vetores lineares de `L * C` posições, indexados por
 `indice = linha * C + coluna`. São mantidos:
 
 - `cobertura[]` e `umidade[]`, constantes durante toda a simulação;
@@ -63,11 +63,11 @@ Cada passo `p` executa, nesta ordem:
 
 O potencial de ignição de uma célula intacta é calculado sobre os oito vizinhos de Moore,
 considerando apenas os que estão em chamas, com peso básico 10 (ortogonal) ou 7 (diagonal),
-ajustado pelo alinhamento com o vento `A = prop_linha · vento_linha + prop_coluna · vento_coluna`
-e pela intensidade `V`, resultando em `Pv = max(1, P_basico + V · A)`. Toda a aritmética é
+ajustado pelo alinhamento com o vento `A = prop_linha * vento_linha + prop_coluna * vento_coluna`
+e pela intensidade `V`, resultando em `Pv = max(1, P_basico + V * A)`. Toda a aritmética é
 inteira, conforme exigido.
 
-A troca dos buffers é feita por permuta de ponteiros em vez de cópia, o que evita `2 · L · C`
+A troca dos buffers é feita por permuta de ponteiros em vez de cópia, o que evita `2 * L * C`
 escritas a cada passo.
 
 ## 3. Solução paralela
@@ -391,10 +391,10 @@ O speedup absoluto toma como referência a melhor versão sequencial conhecida, 
 relativo toma a própria versão paralela executada com uma thread. Reportar os dois separa o
 ganho de paralelismo da diferença entre os binários discutida em 7.7:
 
-| p | Tp (s) | Sp absoluto | Sp relativo | E relativa | e(p) | CT = p·Tp | To = CT − Tseq |
+| p | Tp (s) | Sp absoluto | Sp relativo | E relativa | e(p) | CT = p*Tp | To = CT - Tseq |
 |---|---|---|---|---|---|---|---|
-| 1 | 7,3788 | 1,02 | 1,00 | 100,0% | | 7,379 | −0,144 |
-| 2 | 3,7042 | 2,03 | 1,99 | 99,6% | 0,40% | 7,408 | −0,115 |
+| 1 | 7,3788 | 1,02 | 1,00 | 100,0% | | 7,379 | -0,144 |
+| 2 | 3,7042 | 2,03 | 1,99 | 99,6% | 0,40% | 7,408 | -0,115 |
 | 4 | 1,8945 | 3,97 | 3,89 | 97,4% | 0,90% | 7,578 | +0,055 |
 | 8 | 1,1277 | 6,67 | 6,54 | 81,8% | 3,18% | 9,022 | +1,498 |
 | 16 | 1,0762 | 6,99 | 6,86 | 42,9% | 8,89% | 17,220 | +9,697 |
@@ -405,8 +405,8 @@ que a métrica absoluta produz.
 
 #### Custo total e sobrecarga
 
-O custo total `CT = p · Tp` mede quanto de capacidade de processamento a execução consumiu, e a
-sobrecarga `To = CT − Tseq` mostra quanto disso não virou trabalho útil. Até 4 threads a
+O custo total `CT = p * Tp` mede quanto de capacidade de processamento a execução consumiu, e a
+sobrecarga `To = CT - Tseq` mostra quanto disso não virou trabalho útil. Até 4 threads a
 sobrecarga é desprezível, próxima de zero. Em 8 threads ela chega a 1,5 s, e em 16 threads a
 9,7 s, mais do que o próprio tempo sequencial do programa. Dobrar de 8 para 16 threads consome
 91% mais capacidade de máquina para reduzir o tempo em 4,6%.
@@ -419,7 +419,7 @@ ideal, incluindo trechos sequenciais, sincronização, gerência de threads e de
 | Carga | p = 2 | p = 4 | p = 8 | p = 16 |
 |---|---|---|---|---|
 | pequena | 0,83% | 1,35% | 4,19% | 8,59% |
-| média | −0,02% | 0,65% | 2,63% | 8,56% |
+| média | -0,02% | 0,65% | 2,63% | 8,56% |
 | grande | 0,40% | 0,90% | 3,18% | 8,89% |
 
 Nas três cargas `e(p)` é crescente, o que indica que os custos aumentam com o número de threads
@@ -429,7 +429,7 @@ por memória descrita em 7.1 e, acima de 8 threads, do compartilhamento SMT.
 
 Aplicando o modelo de Amdahl com `f = e(8) = 3,18%`, a previsão para 16 threads seria um speedup
 de 10,83, contra os 6,86 medidos. A divergência confirma que a hipótese de fração serial
-constante não descreve este programa. Pela mesma razão, o limite `S∞ = 1/f = 31,4` não deve ser
+constante não descreve este programa. Pela mesma razão, o limite `S_inf = 1/f = 31,4` não deve ser
 lido como previsão: ele pressupõe um `e(p)` que os dados mostram ser crescente.
 
 #### Efeito da carga de trabalho
@@ -503,7 +503,7 @@ medição ficou registrado em `bench/raw.csv` para auditoria.
 
 ## 8. Conclusão
 
-Na carga de 2500 × 2500 a versão paralela chega a speedup de 6,99 com 16 threads sobre 8 núcleos
+Na carga de 2500 x 2500 a versão paralela chega a speedup de 6,99 com 16 threads sobre 8 núcleos
 físicos, o que corresponde a 87% da capacidade física da máquina. O escalonamento é praticamente
 linear até 4 threads e satura em seguida por limitação de largura de banda de memória,
 comportamento esperado para um autômato celular com baixa intensidade aritmética.

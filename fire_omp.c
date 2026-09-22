@@ -408,7 +408,7 @@ int calcular_potencial_ignicao(int linha, int coluna, const Configuracao *config
 
 void simular(const Configuracao *configuracao, Floresta *floresta, Resultados *resultado)
 {
-    const long long total_celulas = (long long)configuracao->L * configuracao->C;
+    long long total_celulas = (long long)configuracao->L * configuracao->C;
 
     resultado->passos = 0;
     resultado->total_ignicoes = 0;
