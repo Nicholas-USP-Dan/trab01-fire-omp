@@ -1,0 +1,6 @@
+# carga grande, 4 threads, static, mediana de 3 execucoes
+# Intel(R) Core(TM) i7-4790 CPU @ 3.60GHz | gcc (Ubuntu 5.3.1-14ubuntu2) 5.3.1 20160413
+# medido no no hal01 do cluster LASDPC em 2026-09-22
+CFLAGS='' seq=35.183225 omp_4t=9.528212
+CFLAGS='-O2' seq=9.739555 omp_4t=2.881767
+CFLAGS='-O3' seq=6.085161 omp_4t=2.995460

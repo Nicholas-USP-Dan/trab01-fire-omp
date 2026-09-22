@@ -288,7 +288,7 @@ divisão por 8 sugere.
 
 ### 6.5 Impacto das flags de otimização
 
-Carga grande, 4 threads, `static`, mediana de 3 execuções:
+Carga grande, 4 threads, `static`, mediana de 3 execuções, reprodutível por `bash bench/flags.sh`:
 
 | CFLAGS | sequencial (s) | paralelo (s) | speedup |
 |---|---|---|---|

@@ -5,6 +5,7 @@
 ```bash
 bash bench/run.sh                  # 255 execucoes, ~10 min. Gera raw.csv e ambiente.txt
 python3 bench/analise.py           # tabelas de tempo, speedup e eficiencia -> resultados.md
+bash bench/flags.sh                # impacto de -O2 e -O3 -> flags.txt
 bench/.venv/bin/python bench/graficos.py    # speedup.png/svg e eficiencia.png/svg
 ```
 
@@ -40,6 +41,7 @@ configuracao com coeficiente de variacao acima de 5%.
 | `raw.csv` | dados brutos da ultima bateria |
 | `ambiente.txt` | maquina, compilador e flags |
 | `resultados.md` | tabelas geradas |
+| `flags.sh` / `flags.txt` | impacto das flags de otimizacao (secao 6.5) |
 
 ## Outros graficos
 
