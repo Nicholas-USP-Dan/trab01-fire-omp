@@ -81,6 +81,51 @@ if any(t for _, t in d1):
         w(f"| {T} | {t:.4f} | {base / t:.2f} | {t / s:.2f}x mais lento |")
     w("")
 
+w("## Modelo de desempenho\n")
+w("Sp abs = Tseq/Tp. Sp rel = Tpar_1/Tp. e(p) = (p/Sp_rel - 1)/(p - 1).")
+w("CT = p*Tp. To = CT - Tseq.\n")
+for L in LOADS:
+    base = med.get((L, "seq", 1, "static"))
+    um = med.get((L, "omp", 1, "static"))
+    if base is None or um is None:
+        continue
+    w(f"### Carga {L} (Tseq = {base:.4f} s, Tpar_1 = {um:.4f} s)\n")
+    w("| p | Tp (s) | Sp abs | Sp rel | E rel | e(p) | CT | To |")
+    w("|---|---|---|---|---|---|---|---|")
+    for T in THREADS:
+        t = med.get((L, "omp", T, "static"))
+        if t is None:
+            continue
+        sa, sr = base / t, um / t
+        kf = "-" if T == 1 else f"{(T / sr - 1) / (T - 1) * 100:.2f}%"
+        w(f"| {T} | {t:.4f} | {sa:.2f} | {sr:.2f} | {sr / T * 100:.1f}% | {kf} "
+          f"| {T * t:.3f} | {T * t - base:+.3f} |")
+    w("")
+    t8 = med.get((L, "omp", 8, "static"))
+    if t8:
+        f8 = (8 / (um / t8) - 1) / 7
+        prev = 1 / (f8 + (1 - f8) / 16)
+        real = um / med[(L, "omp", 16, "static")]
+        w(f"Amdahl com f = e(8) = {f8 * 100:.2f}%: S(16) previsto = {prev:.2f}, "
+          f"medido = {real:.2f}, S(inf) = {1 / f8:.1f}.\n")
+
+w("### Eixo da carga de trabalho: speedup relativo por tamanho\n")
+w("| Carga | Celulas | " + " | ".join(f"p={t}" for t in THREADS if t > 1) + " |")
+w("|---|---|" + "---|" * (len(THREADS) - 1))
+for L in LOADS:
+    um = med.get((L, "omp", 1, "static"))
+    if um is None:
+        continue
+    dim = DIMS[L].split("x")
+    cel = int(dim[0]) * int(dim[1])
+    linha = f"| {L} | {cel} |"
+    for T in THREADS:
+        if T == 1:
+            continue
+        t = med.get((L, "omp", T, "static"))
+        linha += f" {um / t:.2f} |" if t else " - |"
+    w(linha)
+w("")
 w("## Controle de qualidade das medicoes\n")
 ruins = sorted((k for k in cv if cv[k] > CV_LIMITE), key=lambda k: -cv[k])
 if ruins:

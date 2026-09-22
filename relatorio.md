@@ -252,11 +252,11 @@ linear ideal e a pontilhada vertical marca o limite de 8 núcleos físicos. As c
 e `guided` são praticamente coincidentes, por isso `guided` aparece como faixa larga sob a
 linha de `static`.
 
-A carga pequena (400 × 500) foi medida, mas ficou de fora da análise de escalabilidade. Seu
-tempo sequencial é de 0,19 s, de modo que as medições com 8 e 16 threads caem na faixa de
-0,03 s, onde a criação da equipe de threads e o ruído do sistema pesam mais que o trabalho útil.
-O coeficiente de variação chegou a 69% nessa carga, contra menos de 5% na carga grande. Os dados
-continuam disponíveis em `bench/raw.csv`.
+A carga pequena (400 × 500) ficou fora das curvas de escalabilidade. Seu tempo sequencial é de
+0,19 s, de modo que as medições com 8 e 16 threads caem na faixa de 0,03 s, onde a criação da
+equipe de threads e o ruído do sistema pesam mais que o trabalho útil, e o coeficiente de
+variação chegou a 69%. Ela é retomada na seção 7.6, onde interessa como terceiro ponto do eixo
+da carga de trabalho e não como medida precisa de tempo.
 
 ### 6.3 Eficiência
 
@@ -392,7 +392,111 @@ Ficamos com `-O2`. A medição mostra que `-O3` seria cerca de 24% mais rápido 
 sem alterar os resultados, mas preferimos o nível mais conservador por ter comportamento mais
 previsível entre versões de compilador.
 
-### 7.6 Ameaças à validade
+### 7.6 Análise pelo modelo de desempenho
+
+Avaliar apenas o tempo de resposta do algoritmo paralelo é insuficiente: é preciso considerar
+também os custos extra da versão concorrente, o tamanho da plataforma e a carga de trabalho
+(Foster, 1994). Esta seção retoma os dados sob esses três eixos.
+
+#### Speedup absoluto e relativo
+
+O speedup absoluto toma como referência a melhor versão sequencial conhecida, enquanto o
+relativo toma a própria versão paralela executada com uma thread. Reportar os dois separa o
+ganho de paralelismo da diferença entre os binários discutida em 7.7:
+
+| p | Tp (s) | Sp absoluto | Sp relativo | E relativa | e(p) | CT = p·Tp | To = CT − Tseq |
+|---|---|---|---|---|---|---|---|
+| 1 | 7,3788 | 1,02 | 1,00 | 100,0% | | 7,379 | −0,144 |
+| 2 | 3,7042 | 2,03 | 1,99 | 99,6% | 0,40% | 7,408 | −0,115 |
+| 4 | 1,8945 | 3,97 | 3,89 | 97,4% | 0,90% | 7,578 | +0,055 |
+| 8 | 1,1277 | 6,67 | 6,54 | 81,8% | 3,18% | 9,022 | +1,498 |
+| 16 | 1,0762 | 6,99 | 6,86 | 42,9% | 8,89% | 17,220 | +9,697 |
+
+Carga grande, escalonamento `static`, com Tseq = 7,5232 s e Tpar_1 = 7,3788 s. Pela métrica
+relativa a eficiência em uma e duas threads fica em 100,0% e 99,6%, sem o valor acima de 100%
+que a métrica absoluta produz.
+
+#### Custo total e sobrecarga
+
+O custo total `CT = p · Tp` mede quanto de capacidade de processamento a execução consumiu, e a
+sobrecarga `To = CT − Tseq` mostra quanto disso não virou trabalho útil. Até 4 threads a
+sobrecarga é desprezível, próxima de zero. Em 8 threads ela chega a 1,5 s, e em 16 threads a
+9,7 s, mais do que o próprio tempo sequencial do programa. Dobrar de 8 para 16 threads consome
+91% mais capacidade de máquina para reduzir o tempo em 4,6%.
+
+#### Fração serial efetiva
+
+A métrica de Karp–Flatt condensa em um único valor todos os fatores que afastam o speedup do
+ideal, incluindo trechos sequenciais, sincronização, gerência de threads e desbalanceamento:
+
+| Carga | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---|---|---|---|
+| pequena | 0,83% | 1,35% | 4,19% | 8,59% |
+| média | −0,02% | 0,65% | 2,63% | 8,56% |
+| grande | 0,40% | 0,90% | 3,18% | 8,89% |
+
+Nas três cargas `e(p)` é crescente, o que indica que os custos aumentam com o número de threads
+em vez de refletirem uma fração serial constante do código. A parte do programa que roda em
+`omp single` é pequena e não cresce com `p`, de modo que o crescimento observado vem da disputa
+por memória descrita em 7.1 e, acima de 8 threads, do compartilhamento SMT.
+
+Aplicando o modelo de Amdahl com `f = e(8) = 3,18%`, a previsão para 16 threads seria um speedup
+de 10,83, contra os 6,86 medidos. A divergência confirma que a hipótese de fração serial
+constante não descreve este programa. Pela mesma razão, o limite `S∞ = 1/f = 31,4` não deve ser
+lido como previsão: ele pressupõe um `e(p)` que os dados mostram ser crescente.
+
+#### Efeito da carga de trabalho
+
+| Carga | Células | p = 2 | p = 4 | p = 8 | p = 16 |
+|---|---|---|---|---|---|
+| pequena | 200 mil | 1,98 | 3,84 | 6,19 | 6,99 |
+| média | 1,8 milhões | 2,00 | 3,92 | 6,75 | 7,00 |
+| grande | 6,25 milhões | 1,99 | 3,89 | 6,54 | 6,86 |
+
+Em 8 threads o speedup não cresce de forma monotônica com o tamanho do problema. Da carga
+pequena para a média ele sobe de 6,19 para 6,75, porque o custo fixo de criar a equipe de
+threads se dilui em um volume maior de trabalho. Da média para a grande ele recua para 6,54,
+quando o conjunto de trabalho ultrapassa os 32 MiB de L3 e o tráfego com a memória principal
+passa a limitar. São dois efeitos opostos, cada um dominando em uma faixa de `n`.
+
+O `e(16)` fica próximo de 8,6% nas três cargas, praticamente independente do tamanho do
+problema. Uma sobrecarga de custo fixo se diluiria conforme `n` cresce e faria `e(p)`
+cair, o que não acontece. O custo observado cresce junto com o volume de trabalho, como se
+espera de um gargalo de largura de banda.
+
+#### Decomposição do tempo em memória compartilhada
+
+O modelo de Foster decompõe o tempo de execução paralelo em `T = (Tcomp + Tcomm + Tidle)/p`. Os
+dois últimos termos foram formulados para troca de mensagens, e sua leitura muda em memória
+compartilhada.
+
+Não há `Tcomm` no sentido de mensagens enviadas entre processos: as threads compartilham o mesmo
+espaço de endereçamento e a comunicação ocorre por leitura e escrita nos vetores de estado. O
+equivalente é o custo de buscar e escrever dados na hierarquia de memória, e neste programa é
+justamente esse custo que domina. Cada célula atualizada exige até nove leituras de
+`estado_atual` mais quatro acessos aos demais vetores, contra poucas operações aritméticas, e o
+conjunto de trabalho da carga grande excede o L3. O crescimento de `e(p)` documentado acima é a
+manifestação desse termo: ele não aparece como mensagens, mas como saturação do controlador de
+memória compartilhado pelos oito núcleos.
+
+O `Tidle` tem duas fontes aqui, ambas ligadas às barreiras implícitas do laço principal. A
+primeira é o desbalanceamento entre as threads dentro de cada `omp for`, que faz as que terminam
+antes esperarem na barreira. A segunda é a região `omp single` que executa a contabilidade e a
+troca dos buffers, durante a qual as demais `p - 1` threads ficam paradas. Esse segundo termo é
+pequeno e de custo constante por passo, já que envolve apenas algumas atribuições, e por isso não
+explica o crescimento de `e(p)` com o número de threads: uma parcela serial fixa produziria um
+`e(p)` aproximadamente constante, e não a curva crescente observada.
+
+Medir `Tcomp`, `Tcomm` e `Tidle` separadamente exigiria instrumentação por thread com
+contadores de hardware, o que está fora do escopo deste trabalho. A métrica de Karp–Flatt
+cumpre aqui o papel de indicador agregado desses custos, conforme sua própria definição.
+
+A lei de Gustafson não se aplica a estes dados. Ela supõe que a carga cresça proporcionalmente
+ao número de processadores, enquanto aqui cada uma das três cargas foi executada com todas as
+contagens de threads, mantendo o problema fixo. Responder à pergunta de Gustafson exigiria uma
+bateria construída com `n` proporcional a `p`.
+
+### 7.7 Ameaças à validade
 
 **Eficiência acima de 100% em uma thread.** Com T = 1 a versão paralela é sempre 1 a 2% mais
 rápida que `fire_seq`, o que dá eficiência de 101% a 102%. Não se trata de speedup superlinear.
@@ -402,7 +506,8 @@ desabilitando-a com `-fno-openmp-simd` o tempo fica em 7,41 s contra 7,44 s. O e
 que a diferença entre os escalonamentos analisados e não muda nenhuma conclusão.
 
 **Carga pequena.** Conforme discutido em 6.2, a carga de 400 × 500 é curta demais para medir
-escalabilidade e foi retirada da análise.
+tempo com precisão. Ela não entra nas curvas de escalabilidade, e na seção 7.6 é usada apenas
+como ponto qualitativo do eixo da carga de trabalho.
 
 **Variabilidade residual.** A bateria rodou com a máquina recém-reiniciada e com o daemon de
 antivírus suspenso. Na carga grande nenhuma configuração passou de 5% de coeficiente de
@@ -422,12 +527,30 @@ A equivalência entre as versões foi verificada em 255 execuções, com um úni
 carga, o que confirma que o resultado não depende do número de threads nem da política de
 escalonamento.
 
+A análise pelo modelo de desempenho mostra que essa saturação não corresponde a uma fração
+serial fixa do código. A métrica de Karp–Flatt cresce de 0,40% em duas threads para 8,89% em
+dezesseis, e a sobrecarga `To` passa de praticamente zero até quatro threads para 9,7 s em
+dezesseis, mais que o próprio tempo sequencial. Dobrar de 8 para 16 threads consome 91% mais
+capacidade de máquina em troca de 4,6% de redução no tempo.
+
 Entre os escalonamentos avaliados, `static` e `guided` ficaram equivalentes e acima de
 `dynamic,64`, o que é coerente com a regularidade da carga de trabalho. O achado mais útil do
 estudo, porém, foi negativo. O escalonamento `dynamic,1`, que o libgomp adota por padrão quando
 `OMP_SCHEDULE` não está definida, deixa a versão paralela mais lenta que a sequencial. Neste
 problema, a escolha da política de escalonamento pesou mais no desempenho final do que o número
 de threads empregado.
+
+---
+
+## Referências
+
+FOSTER, I. *Designing and Building Parallel Programs*. Addison-Wesley, 1994.
+
+GRAMA, A.; GUPTA, A.; KARYPIS, G.; KUMAR, V. *Introduction to Parallel Computing*. 2. ed.
+Addison-Wesley, 2003.
+
+KARP, A. H.; FLATT, H. P. Measuring parallel processor performance. *Communications of the ACM*,
+v. 33, n. 5, p. 539-543, 1990.
 
 ---
 
@@ -442,3 +565,11 @@ OMP_SCHEDULE="guided" ./fire_omp entrada_carga_grande.txt
 ```
 
 O número de threads é lido do quarto campo da primeira linha do arquivo de entrada.
+
+A bateria de medições e as tabelas deste relatório são reproduzidas por:
+
+```bash
+bash bench/run.sh          # 255 execucoes, grava bench/raw.csv e bench/ambiente.txt
+python3 bench/analise.py   # tabelas em bench/resultados.md
+python3 bench/graficos.py  # figuras 1 e 2
+```
