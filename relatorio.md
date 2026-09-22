@@ -174,37 +174,47 @@ versões sobre todas as entradas e compara as saídas ignorando a linha de tempo
 
 ## 5. Ambiente experimental
 
+As medições foram feitas no nó `hal01` do cluster do LASDPC, acessado por SSH.
+
 | Item | Configuração |
 |------|--------------|
-| Processador | AMD Ryzen 7 5700X |
-| Núcleos | 8 físicos / 16 lógicos (SMT2) |
-| Cache L3 | 32 MiB |
+| Nó | `hal01` (andromeda.lasdpc.icmc.usp.br) |
+| Processador | Intel Core i7-4790 @ 3,60 GHz |
+| Núcleos | 4 físicos / 8 lógicos (SMT2) |
+| Cache L3 | 8 MiB |
 | Nós NUMA | 1 |
 | Memória | 31 GiB |
-| Sistema | Ubuntu 24.04.4 LTS, kernel 7.0.0-31 |
-| Compilador | gcc 13.3.0 |
+| Sistema | Ubuntu 24.04.4 LTS, kernel 5.15.75 |
+| Compilador | gcc 5.3.1 |
 | Flags | `-std=c99 -fopenmp -O2` (idênticas nas duas versões) |
 | Medição | `omp_get_wtime()` sobre o núcleo da simulação |
 | Metodologia | 5 execuções por configuração; valor reportado é a mediana |
 
-A distinção entre 8 núcleos físicos e 16 threads lógicas importa para a leitura dos resultados.
-Acima de 8 threads não há recursos de execução novos, apenas compartilhamento SMT dos mesmos
-núcleos.
+Duas características do nó orientam a leitura dos resultados. A primeira é que os 8 contextos de
+execução correspondem a apenas 4 núcleos físicos, de modo que a partir de 4 threads não há
+unidades de execução novas, apenas compartilhamento SMT. A segunda é que a grade de medição vai
+até 16 threads, o dobro dos contextos disponíveis; esse último ponto foi mantido justamente para
+mostrar onde o ganho cessa.
+
+O compilador disponível no nó é o gcc 5.3.1, que implementa OpenMP 4.0. Essa versão não aceita
+variável qualificada com `const` na lista de compartilhamento de uma região `default(none)`, o
+que exigiu remover o qualificador de `total_celulas` em `fire_omp.c`. A alteração não muda o
+comportamento do programa.
 
 ## 6. Resultados
 
-Todas as medições seguem a metodologia da seção 5. Os dados brutos estão em `bench/raw.csv` e
-as tabelas completas em `bench/resultados.md`, reprodutíveis com `bash bench/run.sh`.
+Todas as medições seguem a metodologia da seção 5. Os dados brutos estão em `bench/raw.csv` e as
+tabelas completas em `bench/resultados.md`, reprodutíveis com `bash bench/run.sh`.
 
 ### 6.1 Determinismo
 
 A equivalência entre as versões foi verificada sobre as 255 execuções da bateria, cobrindo
 1, 2, 4, 8 e 16 threads e os escalonamentos `static`, `dynamic,64`, `guided` e `dynamic,1`:
 
-| Carga | Execucoes | Checksums distintos |
+| Carga | Execuções | Checksums distintos |
 |---|---|---|
 | pequena | 80 | 1 |
-| media | 80 | 1 |
+| média | 80 | 1 |
 | grande | 95 | 1 |
 
 Ter um único checksum por carga em todas as execuções confirma que o resultado não depende do
@@ -212,147 +222,162 @@ número de threads nem da política de escalonamento.
 
 ### 6.2 Tempos e speedup
 
-Baseline sequencial (mediana de 5 execuções): pequena 0,1896 s; média 2,1593 s; grande 7,5232 s.
+Baseline sequencial (mediana de 5 execuções): pequena 0,2415 s; média 2,8141 s; grande 9,8161 s.
 
-**Carga grande (2500 × 2500), sequencial = 7,5232 s**
-
-| T | static (s) | speedup | guided (s) | speedup | dynamic,64 (s) | speedup |
-|---|---|---|---|---|---|---|
-| 1 | 7,3788 | 1,02 | 7,3744 | 1,02 | 7,4772 | 1,01 |
-| 2 | 3,7042 | 2,03 | 3,6986 | 2,03 | 3,9409 | 1,91 |
-| 4 | 1,8945 | 3,97 | 1,8898 | 3,98 | 2,1018 | 3,58 |
-| 8 | 1,1277 | 6,67 | 1,1190 | 6,72 | 1,2556 | 5,99 |
-| 16 | 1,0762 | 6,99 | 1,0812 | 6,96 | 1,3291 | 5,66 |
-
-**Carga média (1200 × 1500), sequencial = 2,1593 s**
+**Carga grande (2500 x 2500), sequencial = 9,8161 s**
 
 | T | static (s) | speedup | guided (s) | speedup | dynamic,64 (s) | speedup |
 |---|---|---|---|---|---|---|
-| 1 | 2,1244 | 1,02 | 2,1172 | 1,02 | 2,1440 | 1,01 |
-| 2 | 1,0621 | 2,03 | 1,0614 | 2,03 | 1,1458 | 1,88 |
-| 4 | 0,5415 | 3,99 | 0,5423 | 3,98 | 0,6060 | 3,56 |
-| 8 | 0,3145 | 6,87 | 0,3129 | 6,90 | 0,4080 | 5,29 |
-| 16 | 0,3033 | 7,12 | 0,3045 | 7,09 | 0,4576 | 4,72 |
+| 1 | 10,4222 | 0,94 | 10,4182 | 0,94 | 10,5852 | 0,93 |
+| 2 | 5,3043 | 1,85 | 5,2894 | 1,86 | 5,6325 | 1,74 |
+| 4 | 2,8299 | 3,47 | 2,8134 | 3,49 | 3,0656 | 3,20 |
+| 8 | 2,7152 | 3,62 | 2,6671 | 3,68 | 2,8631 | 3,43 |
+| 16 | 2,7582 | 3,56 | 2,8218 | 3,48 | 2,8823 | 3,41 |
+
+**Carga média (1200 x 1500), sequencial = 2,8141 s**
+
+| T | static (s) | speedup | guided (s) | speedup | dynamic,64 (s) | speedup |
+|---|---|---|---|---|---|---|
+| 1 | 2,9748 | 0,95 | 2,9931 | 0,94 | 3,0187 | 0,93 |
+| 2 | 1,5181 | 1,85 | 1,5170 | 1,86 | 1,6271 | 1,73 |
+| 4 | 0,8303 | 3,39 | 0,8142 | 3,46 | 0,9112 | 3,09 |
+| 8 | 0,7834 | 3,59 | 0,7806 | 3,61 | 0,9256 | 3,04 |
+| 16 | 0,8200 | 3,43 | 0,8152 | 3,45 | 0,9018 | 3,12 |
 
 ![Speedup por número de threads](bench/speedup.png)
 
-Figura 1. Speedup em função do número de threads. A linha tracejada cinza marca o speedup
-linear ideal e a pontilhada vertical marca o limite de 8 núcleos físicos. As curvas de `static`
-e `guided` são praticamente coincidentes, por isso `guided` aparece como faixa larga sob a
-linha de `static`.
+Figura 1. Speedup em função do número de threads. A linha tracejada cinza marca o speedup linear
+ideal e a pontilhada vertical marca o limite de núcleos físicos. As curvas de `static` e `guided`
+são praticamente coincidentes, por isso `guided` aparece como faixa larga sob a linha de
+`static`.
 
-A carga pequena (400 × 500) ficou fora das curvas de escalabilidade. Seu tempo sequencial é de
-0,19 s, de modo que as medições com 8 e 16 threads caem na faixa de 0,03 s, onde a criação da
-equipe de threads e o ruído do sistema pesam mais que o trabalho útil, e o coeficiente de
-variação chegou a 69%. Ela é retomada na seção 7.6, onde interessa como terceiro ponto do eixo
-da carga de trabalho e não como medida precisa de tempo.
+A carga pequena (400 x 500) ficou fora das curvas de escalabilidade. Seu tempo sequencial é de
+0,24 s, de modo que as medições com 8 e 16 threads caem na faixa de 0,07 s, onde a criação da
+equipe de threads e o ruído do sistema pesam mais que o trabalho útil. Ela é retomada na seção
+7.6, onde interessa como terceiro ponto do eixo da carga de trabalho e não como medida precisa
+de tempo.
 
 ### 6.3 Eficiência
 
 | T | grande, static | grande, guided | grande, dynamic,64 |
 |---|---|---|---|
-| 1 | 102,0% | 102,0% | 100,6% |
-| 2 | 101,5% | 101,7% | 95,5% |
-| 4 | 99,3% | 99,5% | 89,5% |
-| 8 | 83,4% | 84,0% | 74,9% |
-| 16 | 43,7% | 43,5% | 35,4% |
+| 1 | 94,2% | 94,2% | 92,7% |
+| 2 | 92,5% | 92,8% | 87,1% |
+| 4 | 86,7% | 87,2% | 80,1% |
+| 8 | 45,2% | 46,0% | 42,9% |
+| 16 | 22,2% | 21,7% | 21,3% |
 
 ![Eficiência por número de threads](bench/eficiencia.png)
 
 Figura 2. Eficiência em função do número de threads.
 
-A eficiência em 16 threads é calculada sobre 16, mas a máquina tem 8 núcleos físicos com SMT2.
-Tomando os núcleos físicos como referência, a eficiência em T = 16 é de 6,99 / 8, ou seja,
-87,4%. O programa aproveita 87% da capacidade física disponível, e não metade dela como a
-tabela sugere à primeira vista.
+A eficiência é calculada sobre o número de threads, mas o nó possui 4 núcleos físicos. Relativa
+aos núcleos físicos, a eficiência do melhor resultado (speedup 3,68 com `guided`) é de
+3,68 / 4 = 92%. O programa aproveita 92% da capacidade física disponível, e não os 46% que a
+divisão por 8 sugere.
 
 ### 6.4 Escalonamento `dynamic,1`, o padrão do libgomp
 
 | T | tempo (s) | speedup | vs `static` |
 |---|---|---|---|
-| 1 | 9,2595 | 0,81 | 1,25× mais lento |
-| 2 | 10,6666 | 0,71 | 2,88× mais lento |
-| 4 | 9,4409 | 0,80 | 4,98× mais lento |
-| 8 | 8,7057 | 0,86 | 7,72× mais lento |
-| 16 | 8,8693 | 0,85 | 8,24× mais lento |
+| 1 | 16,0849 | 0,61 | 1,54x mais lento |
+| 2 | 20,1827 | 0,49 | 3,80x mais lento |
+| 4 | 18,2072 | 0,54 | 6,43x mais lento |
+| 8 | 16,1714 | 0,61 | 5,96x mais lento |
+| 16 | 16,0566 | 0,61 | 5,82x mais lento |
 
 ### 6.5 Impacto das flags de otimização
 
-Carga grande, 8 threads, `static`, mediana de 3 execuções:
+Carga grande, 4 threads, `static`, mediana de 3 execuções:
 
 | CFLAGS | sequencial (s) | paralelo (s) | speedup |
 |---|---|---|---|
-| (nenhuma) | 24,889 | 3,480 | 7,15 |
-| `-O2` | 7,545 | 1,152 | 6,55 |
-| `-O3` | 5,738 | 0,912 | 6,29 |
+| (nenhuma) | 35,183 | 9,528 | 3,69 |
+| `-O2` | 9,740 | 2,882 | 3,38 |
+| `-O3` | 6,085 | 2,995 | 2,03 |
 
 ## 7. Análise
 
 ### 7.1 Escalabilidade
 
-O escalonamento é praticamente linear até 4 threads, com 99,3% de eficiência na carga grande.
-Em 8 threads cai para 83% e a partir daí o speedup satura em torno de 7,0.
+O escalonamento é praticamente linear até 2 threads (92,5% de eficiência na carga grande), cai
+para 86,7% em 4 threads e satura em um speedup de aproximadamente 3,6.
 
 Esse teto vem da baixa intensidade aritmética do núcleo da simulação. Para atualizar uma célula
 o programa lê até nove posições de `estado_atual` (a própria e os oito vizinhos de Moore), mais
 `tempo_atual`, `cobertura` e `umidade`, e escreve em `proximo_estado` e `proximo_tempo`. Contra
 esse volume de acessos há pouca conta a fazer: somas, comparações e uma divisão inteira. O
 desempenho acaba limitado pela largura de banda de memória, e não pela capacidade de cálculo.
-Como os 8 núcleos dividem o mesmo controlador de memória e os mesmos 32 MiB de L3, a banda
-satura antes das unidades de execução.
+Como os 4 núcleos dividem o mesmo controlador de memória e os mesmos 8 MiB de L3, a banda satura
+antes das unidades de execução.
 
 A matriz da carga grande tem cerca de 6,25 milhões de células. Somando os dois buffers de estado,
-os dois de tempo, a cobertura e a umidade, o conjunto de trabalho passa folgadamente do L3, o
-que obriga tráfego contínuo com a memória principal a cada passo.
+os dois de tempo, a cobertura e a umidade, o conjunto de trabalho passa em várias ordens de
+grandeza dos 8 MiB de L3, o que obriga tráfego contínuo com a memória principal a cada passo.
 
-### 7.2 Efeito do SMT
+### 7.2 Efeito do SMT e do superdimensionamento
 
-Ao passar de 8 para 16 threads o comportamento depende do escalonamento:
+O nó tem 4 núcleos físicos e 8 contextos de execução, o que separa a grade de medição em três
+regimes distintos. Até 4 threads cada uma ocupa um núcleo próprio. De 4 para 8 threads passam a
+existir duas threads por núcleo, compartilhando as mesmas unidades de execução. Acima de 8 o
+número de threads excede os contextos disponíveis e o sistema operacional passa a alternar entre
+elas.
+
+Da primeira transição, 4 para 8 threads, resulta um ganho modesto:
 
 | Carga | `static` | `guided` | `dynamic,64` |
 |---|---|---|---|
-| média | +3,6% | +2,7% | -12,2% |
-| grande | +4,6% | +3,4% | -5,9% |
+| média | +5,6% | +4,1% | -1,6% |
+| grande | +4,1% | +5,2% | +6,6% |
 
-Com `static` e `guided` o SMT traz um ganho modesto. As duas threads lógicas de um mesmo núcleo
-se revezam durante as esperas por memória e, como a carga é limitada por banda, esse
-preenchimento de bolhas rende alguns pontos percentuais. O ganho é pequeno porque não existem
-unidades de execução novas, apenas melhor aproveitamento das que já havia.
+As duas threads lógicas de um mesmo núcleo se revezam durante as esperas por memória e, como a
+carga é limitada por banda, esse preenchimento de bolhas rende alguns pontos percentuais. O ganho
+é pequeno porque não existem unidades de execução novas, apenas melhor aproveitamento das que já
+havia.
 
-Com `dynamic,64` o efeito se inverte. Dobrar o número de threads dobra a disputa pelo contador
-compartilhado que distribui os blocos, e o custo dessa sincronização supera o que se ganha
-sobrepondo latência.
+A segunda transição, 8 para 16 threads, produz perda em oito das nove combinações medidas:
+
+| Carga | `static` | `guided` | `dynamic,64` |
+|---|---|---|---|
+| pequena | -29,0% | -5,7% | -1,0% |
+| média | -4,7% | -4,4% | +2,6% |
+| grande | -1,6% | -5,8% | -0,7% |
+
+Nesse regime não há recurso algum a ganhar: o custo de alternar entre threads que disputam o
+mesmo contexto passa a ser puro desperdício. A perda é pequena nas cargas maiores, entre 1% e 6%,
+e expressiva na carga pequena, onde o tempo de criação da equipe de threads representa parcela
+significativa do total.
 
 ### 7.3 O custo do escalonamento dinâmico de granularidade unitária
 
-O resultado mais chamativo do experimento é que `dynamic,1` deixa a versão paralela mais lenta
-que a sequencial em todas as contagens de threads, com speedup entre 0,71 e 0,86. Esse é
-justamente o escalonamento que o libgomp adota quando `OMP_SCHEDULE` não está definida.
+O resultado mais chamativo do experimento é que `dynamic,1` deixa a versão paralela entre 1,6 e
+2 vezes mais lenta que a sequencial em todas as contagens de threads, com speedup entre 0,49 e
+0,61. Esse é justamente o escalonamento que o libgomp adota quando `OMP_SCHEDULE` não está
+definida.
 
 Dois efeitos se somam aí. O primeiro é o custo por iteração. Com uma única thread, onde não
-existe disputa possível, `dynamic,1` já é 25% mais lento que `static`, 9,26 s contra 7,38 s.
+existe disputa possível, `dynamic,1` já é 54% mais lento que `static`, 16,08 s contra 10,42 s.
 Esse custo vem da mecânica do escalonamento dinâmico, em que a thread consulta um contador
 compartilhado a cada iteração para saber qual é o próximo índice, em vez de percorrer um
 intervalo calculado de antemão.
 
-O segundo é a contenção. O pior tempo absoluto aparece com 2 threads, 10,67 s e speedup 0,71,
+O segundo é a contenção. O pior tempo absoluto aparece com 2 threads, 20,18 s e speedup 0,49,
 pior até que com uma thread só. Daí em diante a disputa satura e o tempo se estabiliza entre
-8,7 s e 9,4 s qualquer que seja o número de threads, que é o comportamento típico de um gargalo
+16 s e 18 s qualquer que seja o número de threads, que é o comportamento típico de um gargalo
 serializado.
 
-O laço de ativação das zonas amplifica o problema, porque percorre todas as `L × C` células a
+O laço de ativação das zonas amplifica o problema, porque percorre todas as `L * C` células a
 cada passo. Na carga grande são 6,25 milhões de aquisições do contador por passo, ou 625 milhões
 ao longo da simulação, para um corpo de laço que não faz mais que duas comparações.
 
 Foi por isso que o programa passou a definir `static` como padrão através de
-`omp_set_schedule()` quando `OMP_SCHEDULE` não está presente, mantendo a possibilidade de
-trocar a política por variável de ambiente durante os experimentos.
+`omp_set_schedule()` quando `OMP_SCHEDULE` não está presente, mantendo a possibilidade de trocar
+a política por variável de ambiente durante os experimentos.
 
 ### 7.4 Comparação entre escalonamentos
 
-`static` e `guided` são equivalentes em todas as configurações medidas e superam `dynamic,64`
-de forma consistente. Em 8 threads na carga grande os tempos são 1,128 s e 1,119 s contra
-1,256 s.
+`static` e `guided` são equivalentes em todas as configurações medidas e superam `dynamic,64` de
+forma consistente. Em 4 threads na carga grande os tempos são 2,830 s e 2,813 s contra 3,066 s.
 
 A explicação está na regularidade da carga de trabalho. Toda célula executa o mesmo bloco de
 atualização, e apenas as intactas avaliam a vizinhança de Moore, distribuídas de maneira
@@ -366,18 +391,22 @@ uma divisão estática quando não existe desequilíbrio a corrigir.
 
 ### 7.5 Impacto das flags de otimização
 
-Compilar sem otimização é o que produz o maior speedup, 7,15 contra 6,55 com `-O2`. O resultado
+Compilar sem otimização é o que produz o maior speedup, 3,69 contra 3,38 com `-O2`. O resultado
 serve de alerta contra tratar o speedup como métrica suficiente. Sem otimização o baseline
 sequencial fica artificialmente lento, e a paralelização recupera de graça uma folga que o
 próprio compilador eliminaria. O tempo absoluto mostra o quadro real, já que a versão paralela
-sem otimização leva 3,480 s, três vezes mais que os 1,152 s da versão com `-O2`.
+sem otimização leva 9,528 s, mais que o triplo dos 2,882 s da versão com `-O2`.
 
-Há ainda uma questão de correção. A especificação pede o uso de `simd`, e sem otimização o gcc
-não vetoriza, o que faria a diretiva não ter efeito nenhum no binário entregue.
+O caso de `-O3` é mais instrutivo ainda. Ele reduz o tempo sequencial em 38%, de 9,740 s para
+6,085 s, mas piora ligeiramente o tempo paralelo, de 2,882 s para 2,995 s. O speedup despenca
+para 2,03 justamente porque o compilador otimizou melhor o código que servia de referência. Um
+leitor que olhasse apenas a coluna de speedup concluiria que `-O3` prejudicou a paralelização,
+quando o que houve foi melhora do denominador.
 
-Ficamos com `-O2`. A medição mostra que `-O3` seria cerca de 24% mais rápido nas duas versões,
-sem alterar os resultados, mas preferimos o nível mais conservador por ter comportamento mais
-previsível entre versões de compilador.
+Adotou-se `-O2`, e a escolha se sustenta no dado: é a configuração que produz o menor tempo
+absoluto da versão paralela no nó utilizado. Há ainda uma questão de correção, pois a
+especificação pede o uso de `simd`, e sem otimização o gcc não vetoriza, o que faria a diretiva
+não ter efeito nenhum no binário entregue.
 
 ### 7.6 Análise pelo modelo de desempenho
 
@@ -387,69 +416,71 @@ também os custos extra da versão concorrente, o tamanho da plataforma e a carg
 
 #### Speedup absoluto e relativo
 
-O speedup absoluto toma como referência a melhor versão sequencial conhecida, enquanto o
-relativo toma a própria versão paralela executada com uma thread. Reportar os dois separa o
-ganho de paralelismo da diferença entre os binários discutida em 7.7:
+O speedup absoluto toma como referência a melhor versão sequencial conhecida, enquanto o relativo
+toma a própria versão paralela executada com uma thread. Reportar os dois separa o ganho de
+paralelismo da diferença entre os binários discutida em 7.7:
 
 | p | Tp (s) | Sp absoluto | Sp relativo | E relativa | e(p) | CT = p*Tp | To = CT - Tseq |
 |---|---|---|---|---|---|---|---|
-| 1 | 7,3788 | 1,02 | 1,00 | 100,0% | | 7,379 | -0,144 |
-| 2 | 3,7042 | 2,03 | 1,99 | 99,6% | 0,40% | 7,408 | -0,115 |
-| 4 | 1,8945 | 3,97 | 3,89 | 97,4% | 0,90% | 7,578 | +0,055 |
-| 8 | 1,1277 | 6,67 | 6,54 | 81,8% | 3,18% | 9,022 | +1,498 |
-| 16 | 1,0762 | 6,99 | 6,86 | 42,9% | 8,89% | 17,220 | +9,697 |
+| 1 | 10,4222 | 0,94 | 1,00 | 100,0% | | 10,422 | +0,606 |
+| 2 | 5,3043 | 1,85 | 1,96 | 98,2% | 1,79% | 10,609 | +0,793 |
+| 4 | 2,8299 | 3,47 | 3,68 | 92,1% | 2,87% | 11,320 | +1,504 |
+| 8 | 2,7152 | 3,62 | 3,84 | 48,0% | 15,49% | 21,721 | +11,905 |
+| 16 | 2,7582 | 3,56 | 3,78 | 23,6% | 21,56% | 44,132 | +34,316 |
 
-Carga grande, escalonamento `static`, com Tseq = 7,5232 s e Tpar_1 = 7,3788 s. Pela métrica
-relativa a eficiência em uma e duas threads fica em 100,0% e 99,6%, sem o valor acima de 100%
-que a métrica absoluta produz.
+Carga grande, escalonamento `static`, com Tseq = 9,8161 s e Tpar_1 = 10,4222 s. A diferença entre
+as duas métricas é relevante aqui: pela métrica absoluta o speedup em 4 threads é 3,47, enquanto
+pela relativa é 3,68. A primeira embute a penalidade de 6% que a versão paralela sofre ao rodar
+com uma única thread, discutida em 7.7.
 
 #### Custo total e sobrecarga
 
 O custo total `CT = p * Tp` mede quanto de capacidade de processamento a execução consumiu, e a
 sobrecarga `To = CT - Tseq` mostra quanto disso não virou trabalho útil. Até 4 threads a
-sobrecarga é desprezível, próxima de zero. Em 8 threads ela chega a 1,5 s, e em 16 threads a
-9,7 s, mais do que o próprio tempo sequencial do programa. Dobrar de 8 para 16 threads consome
-91% mais capacidade de máquina para reduzir o tempo em 4,6%.
+sobrecarga é modesta, 1,5 s sobre um sequencial de 9,8 s. Em 8 threads ela salta para 11,9 s,
+mais que o próprio tempo sequencial, e em 16 threads chega a 34,3 s. Dobrar de 4 para 8 threads
+consome 92% mais capacidade de máquina para reduzir o tempo em 4%.
 
 #### Fração serial efetiva
 
-A métrica de Karp–Flatt condensa em um único valor todos os fatores que afastam o speedup do
+A métrica de Karp-Flatt condensa em um único valor todos os fatores que afastam o speedup do
 ideal, incluindo trechos sequenciais, sincronização, gerência de threads e desbalanceamento:
 
 | Carga | p = 2 | p = 4 | p = 8 | p = 16 |
 |---|---|---|---|---|
-| pequena | 0,83% | 1,35% | 4,19% | 8,59% |
-| média | -0,02% | 0,65% | 2,63% | 8,56% |
-| grande | 0,40% | 0,90% | 3,18% | 8,89% |
+| pequena | 1,66% | 2,68% | 15,43% | 29,11% |
+| média | 2,07% | 3,88% | 15,81% | 22,74% |
+| grande | 1,79% | 2,87% | 15,49% | 21,56% |
 
 Nas três cargas `e(p)` é crescente, o que indica que os custos aumentam com o número de threads
 em vez de refletirem uma fração serial constante do código. A parte do programa que roda em
 `omp single` é pequena e não cresce com `p`, de modo que o crescimento observado vem da disputa
-por memória descrita em 7.1 e, acima de 8 threads, do compartilhamento SMT.
+por memória descrita em 7.1 e, acima de 4 threads, do compartilhamento SMT. O salto entre 4 e 8
+threads, de cerca de 3% para 15%, coincide exatamente com o ponto em que as threads deixam de ter
+um núcleo físico cada.
 
-Aplicando o modelo de Amdahl com `f = e(8) = 3,18%`, a previsão para 16 threads seria um speedup
-de 10,83, contra os 6,86 medidos. A divergência confirma que a hipótese de fração serial
-constante não descreve este programa. Pela mesma razão, o limite `S_inf = 1/f = 31,4` não deve ser
-lido como previsão: ele pressupõe um `e(p)` que os dados mostram ser crescente.
+Aplicando o modelo de Amdahl com `f = e(8) = 15,49%`, a previsão para 16 threads seria um speedup
+de 4,81, contra os 3,78 medidos. A divergência confirma que a hipótese de fração serial constante
+não descreve este programa. Pela mesma razão, o limite `S_inf = 1/f = 6,5` não deve ser lido como
+previsão: ele pressupõe um `e(p)` que os dados mostram ser crescente.
 
 #### Efeito da carga de trabalho
 
 | Carga | Células | p = 2 | p = 4 | p = 8 | p = 16 |
 |---|---|---|---|---|---|
-| pequena | 200 mil | 1,98 | 3,84 | 6,19 | 6,99 |
-| média | 1,8 milhões | 2,00 | 3,92 | 6,75 | 7,00 |
-| grande | 6,25 milhões | 1,99 | 3,89 | 6,54 | 6,86 |
+| pequena | 200 mil | 1,97 | 3,70 | 3,85 | 2,98 |
+| média | 1,8 milhões | 1,96 | 3,58 | 3,80 | 3,63 |
+| grande | 6,25 milhões | 1,96 | 3,68 | 3,84 | 3,78 |
 
-Em 8 threads o speedup não cresce de forma monotônica com o tamanho do problema. Da carga
-pequena para a média ele sobe de 6,19 para 6,75, porque o custo fixo de criar a equipe de
-threads se dilui em um volume maior de trabalho. Da média para a grande ele recua para 6,54,
-quando o conjunto de trabalho ultrapassa os 32 MiB de L3 e o tráfego com a memória principal
-passa a limitar. São dois efeitos opostos, cada um dominando em uma faixa de `n`.
+Até 8 threads o speedup é praticamente insensível ao tamanho do problema, variando entre 3,80 e
+3,85. A diferença aparece em 16 threads, no regime de superdimensionamento: a carga pequena
+despenca para 2,98 enquanto a grande se mantém em 3,78. Quanto menor o volume de trabalho por
+thread, maior o peso relativo do custo de alternância entre elas.
 
-O `e(16)` fica próximo de 8,6% nas três cargas, praticamente independente do tamanho do
-problema. Uma sobrecarga de custo fixo se diluiria conforme `n` cresce e faria `e(p)`
-cair, o que não acontece. O custo observado cresce junto com o volume de trabalho, como se
-espera de um gargalo de largura de banda.
+O `e(8)` fica próximo de 15% nas três cargas, praticamente independente do tamanho do problema.
+Uma sobrecarga de custo fixo se diluiria conforme `n` cresce e faria `e(p)` cair, o que não
+acontece. O custo observado cresce junto com o volume de trabalho, como se espera de um gargalo
+de largura de banda.
 
 #### Decomposição do tempo em memória compartilhada
 
@@ -462,9 +493,9 @@ espaço de endereçamento e a comunicação ocorre por leitura e escrita nos vet
 equivalente é o custo de buscar e escrever dados na hierarquia de memória, e neste programa é
 justamente esse custo que domina. Cada célula atualizada exige até nove leituras de
 `estado_atual` mais quatro acessos aos demais vetores, contra poucas operações aritméticas, e o
-conjunto de trabalho da carga grande excede o L3. O crescimento de `e(p)` documentado acima é a
-manifestação desse termo: ele não aparece como mensagens, mas como saturação do controlador de
-memória compartilhado pelos oito núcleos.
+conjunto de trabalho da carga grande excede o L3 com folga. O crescimento de `e(p)` documentado
+acima é a manifestação desse termo: ele não aparece como mensagens, mas como saturação do
+controlador de memória compartilhado pelos quatro núcleos.
 
 O `Tidle` tem duas fontes aqui, ambas ligadas às barreiras implícitas do laço principal. A
 primeira é o desbalanceamento entre as threads dentro de cada `omp for`, que faz as que terminam
@@ -474,56 +505,67 @@ pequeno e de custo constante por passo, já que envolve apenas algumas atribuiç
 explica o crescimento de `e(p)` com o número de threads: uma parcela serial fixa produziria um
 `e(p)` aproximadamente constante, e não a curva crescente observada.
 
-Medir `Tcomp`, `Tcomm` e `Tidle` separadamente exigiria instrumentação por thread com
-contadores de hardware, o que está fora do escopo deste trabalho. A métrica de Karp–Flatt
-cumpre aqui o papel de indicador agregado desses custos, conforme sua própria definição.
+Medir `Tcomp`, `Tcomm` e `Tidle` separadamente exigiria instrumentação por thread com contadores
+de hardware, o que está fora do escopo deste trabalho. A métrica de Karp-Flatt cumpre aqui o
+papel de indicador agregado desses custos, conforme sua própria definição.
 
-A lei de Gustafson não se aplica a estes dados. Ela supõe que a carga cresça proporcionalmente
-ao número de processadores, enquanto aqui cada uma das três cargas foi executada com todas as
+A lei de Gustafson não se aplica a estes dados. Ela supõe que a carga cresça proporcionalmente ao
+número de processadores, enquanto aqui cada uma das três cargas foi executada com todas as
 contagens de threads, mantendo o problema fixo. Responder à pergunta de Gustafson exigiria uma
 bateria construída com `n` proporcional a `p`.
 
 ### 7.7 Ameaças à validade
 
-**Eficiência acima de 100% em uma thread.** Com T = 1 a versão paralela é sempre 1 a 2% mais
-rápida que `fire_seq`, o que dá eficiência de 101% a 102%. Não se trata de speedup superlinear.
-Os dois arquivos são implementações independentes do mesmo algoritmo, compiladas em separado, e
-a diferença está na geração de código. Testamos se a diretiva `simd` era responsável, e não é:
-desabilitando-a com `-fno-openmp-simd` o tempo fica em 7,41 s contra 7,44 s. O efeito é menor
-que a diferença entre os escalonamentos analisados e não muda nenhuma conclusão.
+**Penalidade da versão paralela com uma thread.** Com T = 1 a versão paralela é consistentemente
+6% mais lenta que `fire_seq`, 10,42 s contra 9,82 s na carga grande, o que produz speedup
+absoluto de 0,94. Os dois arquivos são implementações independentes do mesmo algoritmo,
+compiladas em separado, e o gcc 5.3.1 disponível no nó gera código sensivelmente pior para a
+versão com diretivas OpenMP. O efeito desloca todas as colunas de speedup absoluto para baixo em
+proporção constante, motivo pelo qual a seção 7.6 reporta também o speedup relativo, que toma
+`Tpar_1` como referência e isola o ganho de paralelismo dessa diferença.
 
-**Carga pequena.** Conforme discutido em 6.2, a carga de 400 × 500 é curta demais para medir
+**Compilador antigo.** O gcc 5.3.1 é de 2016 e implementa OpenMP 4.0. Um compilador mais recente
+provavelmente reduziria a penalidade descrita acima e alteraria os tempos absolutos, embora as
+conclusões sobre escalonamento e sobre o teto de banda de memória dependam da arquitetura, não do
+compilador.
+
+**Quatro núcleos físicos.** O nó limita a observação a um speedup máximo teórico de 4, o que
+impede separar a saturação de largura de banda da simples ausência de núcleos. Verificar qual dos
+dois domina exigiria uma máquina com mais núcleos reais, preferencialmente com topologia NUMA,
+onde a política de alocação de páginas passaria a influenciar o resultado tanto quanto o
+escalonamento.
+
+**Carga pequena.** Conforme discutido em 6.2, a carga de 400 x 500 é curta demais para medir
 tempo com precisão. Ela não entra nas curvas de escalabilidade, e na seção 7.6 é usada apenas
 como ponto qualitativo do eixo da carga de trabalho.
 
-**Variabilidade residual.** A bateria rodou com a máquina recém-reiniciada e com o daemon de
-antivírus suspenso. Na carga grande nenhuma configuração passou de 5% de coeficiente de
-variação. O valor reportado é sempre a mediana de 5 execuções, e o `load average` de cada
-medição ficou registrado em `bench/raw.csv` para auditoria.
+**Variabilidade residual.** Na carga grande nenhuma configuração apresentou coeficiente de
+variação superior a 5%. O valor reportado é sempre a mediana de 5 execuções, e o `load average`
+de cada medição ficou registrado em `bench/raw.csv` para auditoria.
 
 ## 8. Conclusão
 
-Na carga de 2500 x 2500 a versão paralela chega a speedup de 6,99 com 16 threads sobre 8 núcleos
-físicos, o que corresponde a 87% da capacidade física da máquina. O escalonamento é praticamente
-linear até 4 threads e satura em seguida por limitação de largura de banda de memória,
-comportamento esperado para um autômato celular com baixa intensidade aritmética.
+Na carga de 2500 x 2500 a versão paralela chega a speedup relativo de 3,84 com 8 threads sobre 4
+núcleos físicos, o que corresponde a 96% da capacidade física do nó. O escalonamento é
+praticamente linear até 2 threads, mantém 87% de eficiência em 4 e satura em seguida por
+limitação de largura de banda de memória, comportamento esperado para um autômato celular com
+baixa intensidade aritmética.
 
-A equivalência entre as versões foi verificada em 255 execuções, com um único checksum por
-carga, o que confirma que o resultado não depende do número de threads nem da política de
-escalonamento.
+A equivalência entre as versões foi verificada em 255 execuções, com um único checksum por carga,
+o que confirma que o resultado não depende do número de threads nem da política de escalonamento.
 
-A análise pelo modelo de desempenho mostra que essa saturação não corresponde a uma fração
-serial fixa do código. A métrica de Karp–Flatt cresce de 0,40% em duas threads para 8,89% em
-dezesseis, e a sobrecarga `To` passa de praticamente zero até quatro threads para 9,7 s em
-dezesseis, mais que o próprio tempo sequencial. Dobrar de 8 para 16 threads consome 91% mais
-capacidade de máquina em troca de 4,6% de redução no tempo.
+A análise pelo modelo de desempenho mostra que essa saturação não corresponde a uma fração serial
+fixa do código. A métrica de Karp-Flatt cresce de 1,79% em duas threads para 21,56% em dezesseis,
+com salto marcante entre 4 e 8 threads, exatamente onde as threads deixam de ter um núcleo físico
+cada. A sobrecarga `To` passa de 1,5 s em quatro threads para 11,9 s em oito, mais que o próprio
+tempo sequencial.
 
 Entre os escalonamentos avaliados, `static` e `guided` ficaram equivalentes e acima de
 `dynamic,64`, o que é coerente com a regularidade da carga de trabalho. O achado mais útil do
 estudo, porém, foi negativo. O escalonamento `dynamic,1`, que o libgomp adota por padrão quando
-`OMP_SCHEDULE` não está definida, deixa a versão paralela mais lenta que a sequencial. Neste
-problema, a escolha da política de escalonamento pesou mais no desempenho final do que o número
-de threads empregado.
+`OMP_SCHEDULE` não está definida, deixa a versão paralela até duas vezes mais lenta que a
+sequencial. Neste problema, a escolha da política de escalonamento pesou mais no desempenho final
+do que o número de threads empregado.
 
 ## Referências
 
