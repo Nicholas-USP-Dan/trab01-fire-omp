@@ -1,6 +1,7 @@
 # Simulação paralela da propagação direcional de incêndio com zonas de contenção
 
 SSC0903 - Computação de Alto Desempenho
+
 Primeiro Trabalho Prático (TB1), turma G09
 
 | NUSP | Nome |
@@ -10,8 +11,6 @@ Primeiro Trabalho Prático (TB1), turma G09
 | 18518661 | Rodrigo Li Chumpitaz |
 | 12543565 | Samuel de Assunção Ferreira |
 | 15595392 | Wiltord Nyakeruma Mosingi |
-
----
 
 ## 1. Introdução
 
@@ -23,8 +22,6 @@ sequencial (`fire_seq.c`) e uma paralela em OpenMP (`fire_omp.c`).
 O modelo é um autômato celular determinístico. O estado de cada célula no passo `p+1` depende
 apenas do estado da vizinhança de Moore no passo `p`, e é essa propriedade que sustenta toda a
 estratégia de paralelização descrita adiante.
-
----
 
 ## 2. Solução sequencial
 
@@ -72,8 +69,6 @@ inteira, conforme exigido.
 
 A troca dos buffers é feita por permuta de ponteiros em vez de cópia, o que evita `2 · L · C`
 escritas a cada passo.
-
----
 
 ## 3. Solução paralela
 
@@ -153,8 +148,6 @@ OMP_SCHEDULE="dynamic,64" ./fire_omp entrada.txt
 Quando `OMP_SCHEDULE` não é definida, o programa fixa `static` como padrão via
 `omp_set_schedule()`. A justificativa dessa escolha está na seção 7.2.
 
----
-
 ## 4. Validação
 
 A especificação exige que as versões sequencial e paralela produzam valores idênticos em todos
@@ -179,8 +172,6 @@ restrições da seção 5: foco fora da matriz, zona fora da matriz, passo de at
 zonas sobrepostas e estouro dos parâmetros da primeira linha. O alvo `make test` executa as duas
 versões sobre todas as entradas e compara as saídas ignorando a linha de tempo.
 
----
-
 ## 5. Ambiente experimental
 
 | Item | Configuração |
@@ -199,8 +190,6 @@ versões sobre todas as entradas e compara as saídas ignorando a linha de tempo
 A distinção entre 8 núcleos físicos e 16 threads lógicas importa para a leitura dos resultados.
 Acima de 8 threads não há recursos de execução novos, apenas compartilhamento SMT dos mesmos
 núcleos.
-
----
 
 ## 6. Resultados
 
@@ -296,8 +285,6 @@ Carga grande, 8 threads, `static`, mediana de 3 execuções:
 | (nenhuma) | 24,889 | 3,480 | 7,15 |
 | `-O2` | 7,545 | 1,152 | 6,55 |
 | `-O3` | 5,738 | 0,912 | 6,29 |
-
----
 
 ## 7. Análise
 
@@ -514,8 +501,6 @@ antivírus suspenso. Na carga grande nenhuma configuração passou de 5% de coef
 variação. O valor reportado é sempre a mediana de 5 execuções, e o `load average` de cada
 medição ficou registrado em `bench/raw.csv` para auditoria.
 
----
-
 ## 8. Conclusão
 
 Na carga de 2500 × 2500 a versão paralela chega a speedup de 6,99 com 16 threads sobre 8 núcleos
@@ -540,8 +525,6 @@ estudo, porém, foi negativo. O escalonamento `dynamic,1`, que o libgomp adota p
 problema, a escolha da política de escalonamento pesou mais no desempenho final do que o número
 de threads empregado.
 
----
-
 ## Referências
 
 FOSTER, I. *Designing and Building Parallel Programs*. Addison-Wesley, 1994.
@@ -551,8 +534,6 @@ Addison-Wesley, 2003.
 
 KARP, A. H.; FLATT, H. P. Measuring parallel processor performance. *Communications of the ACM*,
 v. 33, n. 5, p. 539-543, 1990.
-
----
 
 ## Apêndice: reprodução
 
