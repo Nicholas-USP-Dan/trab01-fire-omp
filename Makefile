@@ -1,7 +1,7 @@
 CC=gcc
 CFLAGS=-std=c99 -fopenmp -O2
 
-.PHONY: all test submit
+.PHONY: all test submit relatorio
 
 all: fire_seq fire_omp
 
@@ -14,6 +14,9 @@ test: fire_seq fire_omp
 		o=$$(./fire_omp $$f 2>&1 | grep -v '^tempo:'); \
 		if [ "$$s" = "$$o" ]; then echo "OK    $$f"; else echo "FALHA $$f"; fi; \
 	done
+
+relatorio: relatorio.md
+	pandoc relatorio.md -f markdown -t pdf -o relatorio.pdf 
 
 fire_seq: fire_seq.c
 	$(CC) $(CFLAGS) fire_seq.c -o fire_seq

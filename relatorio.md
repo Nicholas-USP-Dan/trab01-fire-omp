@@ -1,18 +1,16 @@
-# Simulação paralela da propagação direcional de incêndio com zonas de contenção
+---
+title: Simulação paralela da propagação direcional de incêndio com zonas de contenção
+subtitle: SSC0903 - Computação de Alto Desempenho (G09)
+author:
+  - Gabriel Demba, 15618344
+  - Nicholas Eiti Dan, 14600749
+  - Rodrigo Li Chumpitaz, 18518661
+  - Samuel de Assunção Ferreira, 12543565
+  - Wiltord Nyakeruma Mosingi, 15595392
+date: 23/09/2023
+---
 
-SSC0903 - Computação de Alto Desempenho
-
-Primeiro Trabalho Prático (TB1), turma G09
-
-| NUSP | Nome |
-|------|------|
-| 15618344 | Gabriel Demba |
-| 14600749 | Nicholas Eiti Dan |
-| 18518661 | Rodrigo Li Chumpitaz |
-| 12543565 | Samuel de Assunção Ferreira |
-| 15595392 | Wiltord Nyakeruma Mosingi |
-
-## 1. Introdução
+# 1. Introdução
 
 Este trabalho implementa a simulação da propagação de incêndio em uma área florestal
 representada por uma matriz de `L * C` células, sob influência de vento direcional e de zonas
@@ -23,9 +21,9 @@ O modelo é um autômato celular determinístico. O estado de cada célula no pa
 apenas do estado da vizinhança de Moore no passo `p`, e é essa propriedade que sustenta toda a
 estratégia de paralelização descrita adiante.
 
-## 2. Solução sequencial
+# 2. Solução sequencial
 
-### 2.1 Estruturas de dados
+## 2.1 Estruturas de dados
 
 A área é representada por vetores lineares de `L * C` posições, indexados por
 `indice = linha * C + coluna`. São mantidos:
@@ -38,7 +36,7 @@ A área é representada por vetores lineares de `L * C` posições, indexados po
 Usamos vetores separados em vez de um vetor de `struct` porque assim cada campo é percorrido de
 forma contígua, o que ajuda a vetorização do laço interno.
 
-### 2.2 Preparação
+## 2.2 Preparação
 
 1. Leitura e validação da entrada, cobrindo as restrições da seção 5 do enunciado.
 2. Geração da cobertura e da umidade, percorrendo a matriz em ordem linear crescente. Para cada
@@ -51,7 +49,7 @@ forma contígua, o que ajuda a vetorização do laço interno.
 
 Nenhuma dessas etapas entra no trecho cronometrado.
 
-### 2.3 Laço de simulação
+## 2.3 Laço de simulação
 
 Cada passo `p` executa, nesta ordem:
 
@@ -70,9 +68,9 @@ inteira, conforme exigido.
 A troca dos buffers é feita por permuta de ponteiros em vez de cópia, o que evita `2 * L * C`
 escritas a cada passo.
 
-## 3. Solução paralela
+# 3. Solução paralela
 
-### 3.1 Estratégia
+## 3.1 Estratégia
 
 A decisão central foi usar uma única região paralela persistente, que engloba todo o laço de
 passos:
@@ -98,7 +96,7 @@ Todas as threads percorrem o laço de passos. O que se repete `T` vezes é apena
 laço, ou seja, o incremento e o teste da condição, cujo custo é desprezível. O trabalho efetivo
 fica a cargo dos `omp for`.
 
-### 3.2 Ausência de condições de corrida
+## 3.2 Ausência de condições de corrida
 
 O duplo buffer elimina a dependência entre células dentro de um mesmo passo. Todas as leituras
 ocorrem em `estado_atual` e `tempo_atual`, e todas as escritas em `proximo_estado` e
@@ -119,14 +117,14 @@ de células em chamas vêm de `reduction(+:...)`, e a parte serial (acumulação
 ignições, permuta de ponteiros e condição de parada) fica em `omp single`, cuja barreira
 implícita dispensa qualquer sincronização explícita.
 
-### 3.3 Vetorização
+## 3.3 Vetorização
 
 O laço de atualização tem dois níveis. O `omp for` distribui as linhas entre as threads e o
 `omp simd` percorre as colunas dentro de cada linha, com reduções locais que são somadas aos
 acumuladores da thread ao final da linha. Como o percurso por colunas é contíguo em memória,
 ele favorece tanto a vetorização quanto a localidade de cache.
 
-### 3.4 Condição de parada
+## 3.4 Condição de parada
 
 A condição de parada reaproveita o contador `chamas_proximo`, que já vem da redução feita
 durante o cálculo do próximo estado. Assim não é preciso varrer a matriz uma segunda vez só
@@ -136,7 +134,7 @@ Antes de criar a região paralela há uma verificação adicional: se não houve
 chamas após a aplicação dos focos iniciais, nenhum passo é executado, conforme a seção 9 do
 enunciado.
 
-### 3.5 Escalonamento
+## 3.5 Escalonamento
 
 Ambos os `omp for` usam `schedule(runtime)`, permitindo comparar políticas de escalonamento por
 variável de ambiente sem recompilar:
@@ -148,7 +146,7 @@ OMP_SCHEDULE="dynamic,64" ./fire_omp entrada.txt
 Quando `OMP_SCHEDULE` não é definida, o programa fixa `static` como padrão via
 `omp_set_schedule()`. A justificativa dessa escolha está na seção 7.2.
 
-## 4. Validação
+# 4. Validação
 
 A especificação exige que as versões sequencial e paralela produzam valores idênticos em todos
 os campos, exceto o tempo. Foram verificados três níveis de equivalência.
@@ -172,7 +170,7 @@ restrições da seção 5: foco fora da matriz, zona fora da matriz, passo de at
 zonas sobrepostas e estouro dos parâmetros da primeira linha. O alvo `make test` executa as duas
 versões sobre todas as entradas e compara as saídas ignorando a linha de tempo.
 
-## 5. Ambiente experimental
+# 5. Ambiente experimental
 
 As medições foram feitas no nó `hal01` do cluster do LASDPC, acessado por SSH.
 
@@ -201,12 +199,12 @@ variável qualificada com `const` na lista de compartilhamento de uma região `d
 que exigiu remover o qualificador de `total_celulas` em `fire_omp.c`. A alteração não muda o
 comportamento do programa.
 
-## 6. Resultados
+# 6. Resultados
 
-Todas as medições seguem a metodologia da seção 5. Os dados brutos estão em `bench/raw.csv` e as
-tabelas completas em `bench/resultados.md`, reprodutíveis com `bash bench/run.sh`.
+Todas as medições seguem a metodologia da seção 5. Os dados brutos estão em `bench/raw.csv` e
+as tabelas completas em `bench/resultados.md`, reprodutíveis com `bash bench/run.sh`.
 
-### 6.1 Determinismo
+## 6.1 Determinismo
 
 A equivalência entre as versões foi verificada sobre as 255 execuções da bateria, cobrindo
 1, 2, 4, 8 e 16 threads e os escalonamentos `static`, `dynamic,64`, `guided` e `dynamic,1`:
@@ -220,7 +218,7 @@ A equivalência entre as versões foi verificada sobre as 255 execuções da bat
 Ter um único checksum por carga em todas as execuções confirma que o resultado não depende do
 número de threads nem da política de escalonamento.
 
-### 6.2 Tempos e speedup
+## 6.2 Tempos e speedup
 
 Baseline sequencial (mediana de 5 execuções): pequena 0,2415 s; média 2,8141 s; grande 9,8161 s.
 
@@ -257,7 +255,7 @@ equipe de threads e o ruído do sistema pesam mais que o trabalho útil. Ela é 
 7.6, onde interessa como terceiro ponto do eixo da carga de trabalho e não como medida precisa
 de tempo.
 
-### 6.3 Eficiência
+## 6.3 Eficiência
 
 | T | grande, static | grande, guided | grande, dynamic,64 |
 |---|---|---|---|
@@ -276,7 +274,7 @@ aos núcleos físicos, a eficiência do melhor resultado (speedup 3,68 com `guid
 3,68 / 4 = 92%. O programa aproveita 92% da capacidade física disponível, e não os 46% que a
 divisão por 8 sugere.
 
-### 6.4 Escalonamento `dynamic,1`, o padrão do libgomp
+## 6.4 Escalonamento `dynamic,1`, o padrão do libgomp
 
 | T | tempo (s) | speedup | vs `static` |
 |---|---|---|---|
@@ -288,34 +286,34 @@ divisão por 8 sugere.
 
 ### 6.5 Impacto das flags de otimização
 
-Carga grande, 4 threads, `static`, mediana de 3 execuções, reprodutível por `bash bench/flags.sh`:
+Carga grande, 8 threads, `static`, mediana de 3 execuções:
 
 | CFLAGS | sequencial (s) | paralelo (s) | speedup |
 |---|---|---|---|
-| (nenhuma) | 35,183 | 9,528 | 3,69 |
-| `-O2` | 9,740 | 2,882 | 3,38 |
-| `-O3` | 6,085 | 2,995 | 2,03 |
+| (nenhuma) | 24,889 | 3,480 | 7,15 |
+| `-O2` | 7,545 | 1,152 | 6,55 |
+| `-O3` | 5,738 | 0,912 | 6,29 |
 
 ## 7. Análise
 
 ### 7.1 Escalabilidade
 
-O escalonamento é praticamente linear até 2 threads (92,5% de eficiência na carga grande), cai
-para 86,7% em 4 threads e satura em um speedup de aproximadamente 3,6.
+O escalonamento é praticamente linear até 4 threads, com 99,3% de eficiência na carga grande.
+Em 8 threads cai para 83% e a partir daí o speedup satura em torno de 7,0.
 
 Esse teto vem da baixa intensidade aritmética do núcleo da simulação. Para atualizar uma célula
 o programa lê até nove posições de `estado_atual` (a própria e os oito vizinhos de Moore), mais
 `tempo_atual`, `cobertura` e `umidade`, e escreve em `proximo_estado` e `proximo_tempo`. Contra
 esse volume de acessos há pouca conta a fazer: somas, comparações e uma divisão inteira. O
 desempenho acaba limitado pela largura de banda de memória, e não pela capacidade de cálculo.
-Como os 4 núcleos dividem o mesmo controlador de memória e os mesmos 8 MiB de L3, a banda satura
-antes das unidades de execução.
+Como os 8 núcleos dividem o mesmo controlador de memória e os mesmos 32 MiB de L3, a banda
+satura antes das unidades de execução.
 
 A matriz da carga grande tem cerca de 6,25 milhões de células. Somando os dois buffers de estado,
-os dois de tempo, a cobertura e a umidade, o conjunto de trabalho passa em várias ordens de
-grandeza dos 8 MiB de L3, o que obriga tráfego contínuo com a memória principal a cada passo.
+os dois de tempo, a cobertura e a umidade, o conjunto de trabalho passa folgadamente do L3, o
+que obriga tráfego contínuo com a memória principal a cada passo.
 
-### 7.2 Efeito do SMT e do superdimensionamento
+## 7.2 Efeito do SMT e do superdimensionamento
 
 O nó tem 4 núcleos físicos e 8 contextos de execução, o que separa a grade de medição em três
 regimes distintos. Até 4 threads cada uma ocupa um núcleo próprio. De 4 para 8 threads passam a
@@ -348,7 +346,7 @@ mesmo contexto passa a ser puro desperdício. A perda é pequena nas cargas maio
 e expressiva na carga pequena, onde o tempo de criação da equipe de threads representa parcela
 significativa do total.
 
-### 7.3 O custo do escalonamento dinâmico de granularidade unitária
+## 7.3 O custo do escalonamento dinâmico de granularidade unitária
 
 O resultado mais chamativo do experimento é que `dynamic,1` deixa a versão paralela entre 1,6 e
 2 vezes mais lenta que a sequencial em todas as contagens de threads, com speedup entre 0,49 e
@@ -389,7 +387,7 @@ vizinhas.
 O `guided` chega perto do `static` porque seus primeiros blocos são grandes, o que o aproxima de
 uma divisão estática quando não existe desequilíbrio a corrigir.
 
-### 7.5 Impacto das flags de otimização
+## 7.5 Impacto das flags de otimização
 
 Compilar sem otimização é o que produz o maior speedup, 3,69 contra 3,38 com `-O2`. O resultado
 serve de alerta contra tratar o speedup como métrica suficiente. Sem otimização o baseline
@@ -408,13 +406,13 @@ absoluto da versão paralela no nó utilizado. Há ainda uma questão de correç
 especificação pede o uso de `simd`, e sem otimização o gcc não vetoriza, o que faria a diretiva
 não ter efeito nenhum no binário entregue.
 
-### 7.6 Análise pelo modelo de desempenho
+## 7.6 Análise pelo modelo de desempenho
 
 Avaliar apenas o tempo de resposta do algoritmo paralelo é insuficiente: é preciso considerar
 também os custos extra da versão concorrente, o tamanho da plataforma e a carga de trabalho
 (Foster, 1994). Esta seção retoma os dados sob esses três eixos.
 
-#### Speedup absoluto e relativo
+### Speedup absoluto e relativo
 
 O speedup absoluto toma como referência a melhor versão sequencial conhecida, enquanto o relativo
 toma a própria versão paralela executada com uma thread. Reportar os dois separa o ganho de
@@ -433,7 +431,7 @@ as duas métricas é relevante aqui: pela métrica absoluta o speedup em 4 threa
 pela relativa é 3,68. A primeira embute a penalidade de 6% que a versão paralela sofre ao rodar
 com uma única thread, discutida em 7.7.
 
-#### Custo total e sobrecarga
+### Custo total e sobrecarga
 
 O custo total `CT = p * Tp` mede quanto de capacidade de processamento a execução consumiu, e a
 sobrecarga `To = CT - Tseq` mostra quanto disso não virou trabalho útil. Até 4 threads a
@@ -441,7 +439,7 @@ sobrecarga é modesta, 1,5 s sobre um sequencial de 9,8 s. Em 8 threads ela salt
 mais que o próprio tempo sequencial, e em 16 threads chega a 34,3 s. Dobrar de 4 para 8 threads
 consome 92% mais capacidade de máquina para reduzir o tempo em 4%.
 
-#### Fração serial efetiva
+### Fração serial efetiva
 
 A métrica de Karp-Flatt condensa em um único valor todos os fatores que afastam o speedup do
 ideal, incluindo trechos sequenciais, sincronização, gerência de threads e desbalanceamento:
@@ -464,7 +462,7 @@ de 4,81, contra os 3,78 medidos. A divergência confirma que a hipótese de fra�
 não descreve este programa. Pela mesma razão, o limite `S_inf = 1/f = 6,5` não deve ser lido como
 previsão: ele pressupõe um `e(p)` que os dados mostram ser crescente.
 
-#### Efeito da carga de trabalho
+### Efeito da carga de trabalho
 
 | Carga | Células | p = 2 | p = 4 | p = 8 | p = 16 |
 |---|---|---|---|---|---|
@@ -482,7 +480,7 @@ Uma sobrecarga de custo fixo se diluiria conforme `n` cresce e faria `e(p)` cair
 acontece. O custo observado cresce junto com o volume de trabalho, como se espera de um gargalo
 de largura de banda.
 
-#### Decomposição do tempo em memória compartilhada
+### Decomposição do tempo em memória compartilhada
 
 O modelo de Foster decompõe o tempo de execução paralelo em `T = (Tcomp + Tcomm + Tidle)/p`. Os
 dois últimos termos foram formulados para troca de mensagens, e sua leitura muda em memória
@@ -514,7 +512,7 @@ número de processadores, enquanto aqui cada uma das três cargas foi executada 
 contagens de threads, mantendo o problema fixo. Responder à pergunta de Gustafson exigiria uma
 bateria construída com `n` proporcional a `p`.
 
-### 7.7 Ameaças à validade
+## 7.7 Ameaças à validade
 
 **Penalidade da versão paralela com uma thread.** Com T = 1 a versão paralela é consistentemente
 6% mais lenta que `fire_seq`, 10,42 s contra 9,82 s na carga grande, o que produz speedup
@@ -543,7 +541,7 @@ como ponto qualitativo do eixo da carga de trabalho.
 variação superior a 5%. O valor reportado é sempre a mediana de 5 execuções, e o `load average`
 de cada medição ficou registrado em `bench/raw.csv` para auditoria.
 
-## 8. Conclusão
+# 8. Conclusão
 
 Na carga de 2500 x 2500 a versão paralela chega a speedup relativo de 3,84 com 8 threads sobre 4
 núcleos físicos, o que corresponde a 96% da capacidade física do nó. O escalonamento é
@@ -567,7 +565,7 @@ estudo, porém, foi negativo. O escalonamento `dynamic,1`, que o libgomp adota p
 sequencial. Neste problema, a escolha da política de escalonamento pesou mais no desempenho final
 do que o número de threads empregado.
 
-## Referências
+# Referências
 
 FOSTER, I. *Designing and Building Parallel Programs*. Addison-Wesley, 1994.
 
@@ -577,11 +575,11 @@ Addison-Wesley, 2003.
 KARP, A. H.; FLATT, H. P. Measuring parallel processor performance. *Communications of the ACM*,
 v. 33, n. 5, p. 539-543, 1990.
 
-## Apêndice: reprodução
+# Apêndice: reprodução
 
 ```bash
 make                 # compila fire_seq e fire_omp com -O2
-make test            # valida seq × omp em todas as entradas
+make test            # valida seq x omp em todas as entradas
 ./fire_seq entrada_carga_grande.txt
 ./fire_omp entrada_carga_grande.txt
 OMP_SCHEDULE="guided" ./fire_omp entrada_carga_grande.txt
