@@ -7,7 +7,7 @@ author:
   - Rodrigo Li Chumpitaz, 18518661
   - Samuel de Assunção Ferreira, 12543565
   - Wiltord Nyakeruma Mosingi, 15595392
-date: 23/09/2023
+date: 23/09/2026
 ---
 
 # 1. Introdução
@@ -286,32 +286,32 @@ divisão por 8 sugere.
 
 ### 6.5 Impacto das flags de otimização
 
-Carga grande, 8 threads, `static`, mediana de 3 execuções:
+Carga grande, 4 threads, `static`, mediana de 3 execuções, reprodutível por `bash bench/flags.sh`:
 
 | CFLAGS | sequencial (s) | paralelo (s) | speedup |
 |---|---|---|---|
-| (nenhuma) | 24,889 | 3,480 | 7,15 |
-| `-O2` | 7,545 | 1,152 | 6,55 |
-| `-O3` | 5,738 | 0,912 | 6,29 |
+| (nenhuma) | 35,183 | 9,528 | 3,69 |
+| `-O2` | 9,740 | 2,882 | 3,38 |
+| `-O3` | 6,085 | 2,995 | 2,03 |
 
 ## 7. Análise
 
 ### 7.1 Escalabilidade
 
-O escalonamento é praticamente linear até 4 threads, com 99,3% de eficiência na carga grande.
-Em 8 threads cai para 83% e a partir daí o speedup satura em torno de 7,0.
+O escalonamento é praticamente linear até 2 threads (92,5% de eficiência na carga grande), cai
+para 86,7% em 4 threads e satura em um speedup de aproximadamente 3,6.
 
 Esse teto vem da baixa intensidade aritmética do núcleo da simulação. Para atualizar uma célula
 o programa lê até nove posições de `estado_atual` (a própria e os oito vizinhos de Moore), mais
 `tempo_atual`, `cobertura` e `umidade`, e escreve em `proximo_estado` e `proximo_tempo`. Contra
 esse volume de acessos há pouca conta a fazer: somas, comparações e uma divisão inteira. O
 desempenho acaba limitado pela largura de banda de memória, e não pela capacidade de cálculo.
-Como os 8 núcleos dividem o mesmo controlador de memória e os mesmos 32 MiB de L3, a banda
-satura antes das unidades de execução.
+Como os 4 núcleos dividem o mesmo controlador de memória e os mesmos 8 MiB de L3, a banda satura
+antes das unidades de execução.
 
 A matriz da carga grande tem cerca de 6,25 milhões de células. Somando os dois buffers de estado,
-os dois de tempo, a cobertura e a umidade, o conjunto de trabalho passa folgadamente do L3, o
-que obriga tráfego contínuo com a memória principal a cada passo.
+os dois de tempo, a cobertura e a umidade, o conjunto de trabalho passa em várias ordens de
+grandeza dos 8 MiB de L3, o que obriga tráfego contínuo com a memória principal a cada passo.
 
 ## 7.2 Efeito do SMT e do superdimensionamento
 
